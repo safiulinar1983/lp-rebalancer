@@ -7,7 +7,7 @@ pool:
   address: "0x26e263efdc91f0d3279E2Ec2Bd58A7Ca5C2fCE62"
 
 strategy:
-  range_width: 0.01
+  range_half_width: 0.01
   check_interval: 5
 
 mode: DRY_RUN

@@ -9,8 +9,9 @@ load_dotenv()
 class AppConfig:
     rpc_url: str
     pool_address: str
+    range_half_width: float
+    check_interval: int
     expected_chain_id: int = 8453
-
 
 def load_config() -> AppConfig:
     rpc_url = os.getenv("BASE_RPC_URL", "https://mainnet.base.org").strip()
@@ -29,4 +30,6 @@ def load_config() -> AppConfig:
     return AppConfig(
         rpc_url=rpc_url,
         pool_address=pool_address,
+        range_half_width=config["strategy"]["range_half_width"],
+        check_interval=config["strategy"]["check_interval"],
     )
