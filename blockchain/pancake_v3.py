@@ -1,4 +1,18 @@
 from web3 import Web3
+from dataclasses import dataclass
+from blockchain.price import price_token1_in_token0
+
+@dataclass(frozen=True)
+class PoolState:
+    address: str
+    token0: str
+    token1: str
+    fee: int
+    tick_spacing: int
+    sqrt_price_x96: int
+    tick: int
+    liquidity: int
+    price: object
 
 
 POOL_ABI = [
@@ -65,16 +79,22 @@ class PancakeV3Pool:
             abi=POOL_ABI,
         )
 
-    def read_state(self) -> dict:
+    def read_state(self) -> PoolState:
         slot0 = self.contract.functions.slot0().call()
+        price = price_token1_in_token0(
+            slot0[0],
+            6,
+            8,
+        )
 
-        return {
-            "address": self.address,
-            "token0": self.contract.functions.token0().call(),
-            "token1": self.contract.functions.token1().call(),
-            "fee": self.contract.functions.fee().call(),
-            "tick_spacing": self.contract.functions.tickSpacing().call(),
-            "sqrt_price_x96": slot0[0],
-            "tick": slot0[1],
-            "liquidity": self.contract.functions.liquidity().call(),
-        }
+        return PoolState(
+            address=self.address,
+            token0=self.contract.functions.token0().call(),
+            token1=self.contract.functions.token1().call(),
+            fee=self.contract.functions.fee().call(),
+            tick_spacing=self.contract.functions.tickSpacing().call(),
+            sqrt_price_x96=slot0[0],
+            tick=slot0[1],
+            liquidity=self.contract.functions.liquidity().call(),
+            price=price,
+        )
