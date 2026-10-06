@@ -8,6 +8,8 @@ class PoolState:
     address: str
     token0: str
     token1: str
+    token0_decimals: int
+    token1_decimals: int
     fee: int
     tick_spacing: int
     sqrt_price_x96: int
@@ -119,6 +121,8 @@ class PancakeV3Pool:
             address=self.address,
             token0=self.contract.functions.token0().call(),
             token1=self.contract.functions.token1().call(),
+            token0_decimals=token0_decimals,
+            token1_decimals=token1_decimals,
             fee=self.contract.functions.fee().call(),
             tick_spacing=self.contract.functions.tickSpacing().call(),
             sqrt_price_x96=slot0[0],
