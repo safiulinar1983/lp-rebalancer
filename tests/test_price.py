@@ -4,6 +4,7 @@ from blockchain.price import (
     price_from_tick,
     price_token1_in_token0,
     price_range_ticks,
+    is_tick_in_range,
 )
 
 
@@ -43,3 +44,11 @@ def test_price_range_ticks():
 
     assert lower_tick == -67610
     assert upper_tick == -67400
+
+def test_is_tick_in_range():
+    assert is_tick_in_range(-67500, -67610, -67400)
+    assert is_tick_in_range(-67610, -67610, -67400)
+    assert is_tick_in_range(-67400, -67610, -67400)
+
+    assert not is_tick_in_range(-67611, -67610, -67400)
+    assert not is_tick_in_range(-67399, -67610, -67400)

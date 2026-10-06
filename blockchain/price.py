@@ -192,3 +192,19 @@ def price_range_ticks(
         raise ValueError("Invalid tick range")
 
     return lower_tick, upper_tick
+
+def is_tick_in_range(
+    tick: int,
+    lower_tick: int,
+    upper_tick: int,
+) -> bool:
+    """
+    Returns True if the current V3 tick is inside the position range.
+
+    The lower and upper ticks are inclusive.
+    """
+
+    if lower_tick >= upper_tick:
+        raise ValueError("lower_tick must be less than upper_tick")
+
+    return lower_tick <= tick <= upper_tick
