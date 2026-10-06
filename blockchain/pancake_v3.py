@@ -66,6 +66,23 @@ POOL_ABI = [
         "stateMutability": "view",
         "type": "function",
     },
+    {
+    "inputs": [],
+    "name": "decimals",
+    "outputs": [{"name": "", "type": "uint8"}],
+    "stateMutability": "view",
+    "type": "function",
+    },
+]
+
+ERC20_ABI = [
+    {
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{"name": "", "type": "uint8"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
 ]
 
 
@@ -79,12 +96,29 @@ class PancakeV3Pool:
             abi=POOL_ABI,
         )
 
+    def token_decimals(self) -> tuple[int, int]:
+        token0 = self.w3.eth.contract(
+            address=self.contract.functions.token0().call(),
+            abi=ERC20_ABI,
+        )
+        token1 = self.w3.eth.contract(
+            address=self.contract.functions.token1().call(),
+            abi=ERC20_ABI,
+        )
+
+        return (
+            token0.functions.decimals().call(),
+            token1.functions.decimals().call(),
+        )
+
     def read_state(self) -> PoolState:
         slot0 = self.contract.functions.slot0().call()
+        token0_decimals, token1_decimals = self.token_decimals()
+
         price = price_token1_in_token0(
             slot0[0],
-            6,
-            8,
+            token0_decimals,
+            token1_decimals,
         )
 
         return PoolState(
