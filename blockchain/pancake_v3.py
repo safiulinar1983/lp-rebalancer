@@ -1,5 +1,6 @@
-from web3 import Web3
+from decimal import Decimal
 from dataclasses import dataclass
+from web3 import Web3
 from blockchain.price import price_token1_in_token0
 
 @dataclass(frozen=True)
@@ -12,7 +13,7 @@ class PoolState:
     sqrt_price_x96: int
     tick: int
     liquidity: int
-    price: object
+    price: Decimal
 
 
 POOL_ABI = [
@@ -65,13 +66,6 @@ POOL_ABI = [
         ],
         "stateMutability": "view",
         "type": "function",
-    },
-    {
-    "inputs": [],
-    "name": "decimals",
-    "outputs": [{"name": "", "type": "uint8"}],
-    "stateMutability": "view",
-    "type": "function",
     },
 ]
 
