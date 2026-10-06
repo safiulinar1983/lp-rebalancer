@@ -1,0 +1,10 @@
+# Stage 1: RPC connection only.
+# Pool/token/position settings will be added in later stages.
+network: base
+dex: pancakeswap_v3
+
+strategy:
+  range_width: 0.01
+  check_interval: 5
+
+mode: DRY_RUN
