@@ -3,6 +3,7 @@ from decimal import Decimal
 from blockchain.price import (
     price_from_tick,
     price_token1_in_token0,
+    price_range_ticks,
 )
 
 
@@ -27,3 +28,18 @@ def test_price_tick_direction():
     upper = price_from_tick(-67500, 6, 8)
 
     assert lower > upper
+
+
+def test_price_range_ticks():
+    current_price = Decimal("85391.897326818")
+
+    lower_tick, upper_tick = price_range_ticks(
+        current_price,
+        Decimal("0.01"),
+        10,
+        6,
+        8,
+    )
+
+    assert lower_tick == -67610
+    assert upper_tick == -67400
