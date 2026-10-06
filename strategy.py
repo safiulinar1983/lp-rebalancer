@@ -11,6 +11,13 @@ class StrategyDecision:
     lower_tick: int
     upper_tick: int
     in_range: bool
+    action: str
+
+
+@dataclass(frozen=True)
+class Position:
+    lower_tick: int
+    upper_tick: int
 
 
 class Strategy:
@@ -20,14 +27,9 @@ class Strategy:
 
         self.range_half_width = range_half_width
 
-    def evaluate(self, state: PoolState) -> StrategyDecision:
-        lower_tick, upper_tick = price_range_ticks(
-            current_price=state.price,
-            range_width=self.range_half_width,
-            tick_spacing=state.tick_spacing,
-            token0_decimals=state.token0_decimals,
-            token1_decimals=state.token1_decimals,
-        )
+    def evaluate(self, state: PoolState, position: Position) -> StrategyDecision:
+        lower_tick = position.lower_tick
+        upper_tick = position.upper_tick
 
         in_range = is_tick_in_range(
             state.tick,
@@ -40,4 +42,5 @@ class Strategy:
             lower_tick=lower_tick,
             upper_tick=upper_tick,
             in_range=in_range,
+            action="HOLD" if in_range else "REBALANCE",
         )
