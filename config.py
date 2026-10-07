@@ -10,6 +10,8 @@ class AppConfig:
     check_interval: int
     expected_chain_id: int
     network: str
+    position_manager_address: str
+    wallet_address: str
 
 
 def load_config() -> AppConfig:
@@ -35,6 +37,9 @@ def load_config() -> AppConfig:
     if not pool_address:
         raise ValueError("Pool address is empty")
 
+    position_manager_address = config["position_manager"]["address"].strip()
+    wallet_address = config["wallet"]["address"].strip()
+
     return AppConfig(
         rpc_url=rpc_url,
         pool_address=pool_address,
@@ -42,4 +47,6 @@ def load_config() -> AppConfig:
         check_interval=config["strategy"]["check_interval"],
         expected_chain_id=expected_chain_id,
         network=network,
+        position_manager_address=position_manager_address,
+        wallet_address=wallet_address,
     )

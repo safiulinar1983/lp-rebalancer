@@ -70,15 +70,12 @@ if actual_chain_id != config.expected_chain_id:
         f"got {actual_chain_id}"
     )
 
-
 POSITION_MANAGER = Web3.to_checksum_address(
-    "0x27F971cb582BF9E50F397e4d29a5C7A34f11faA2"
+    config.position_manager_address
 )
-
 WALLET = Web3.to_checksum_address(
-    "0x87e58e8B5983FC4fF8199d3E16264ad39182a96e"
+    config.wallet_address
 )
-
 
 position_manager = w3.eth.contract(
     address=POSITION_MANAGER,
