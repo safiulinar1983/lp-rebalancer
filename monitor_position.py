@@ -38,13 +38,13 @@ strategy = Strategy(
 
 pool_state = pool.read_state()
 
-token_ids = position_manager.get_token_ids()
+position = position_manager.find_position(
+    token0=pool_state.token0,
+    token1=pool_state.token1,
+    fee=pool_state.fee,
+)
 
-if not token_ids:
-    raise RuntimeError("No LP positions found")
-
-token_id = token_ids[0]
-position = position_manager.read_position(token_id)
+token_id = position.token_id
 
 decision = strategy.evaluate(
     pool_state,
@@ -63,6 +63,9 @@ print()
 print(f"Current tick:  {pool_state.tick}")
 print(f"Tick lower:    {position.lower_tick}")
 print(f"Tick upper:    {position.upper_tick}")
+print(f"Liquidity:     {position.liquidity}")
+print(f"Tokens owed 0: {position.tokens_owed0}")
+print(f"Tokens owed 1: {position.tokens_owed1}")
 print()
 print(f"Decision:      {decision}")
 print("=" * 50)

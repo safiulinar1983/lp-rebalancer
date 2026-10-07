@@ -16,8 +16,15 @@ class StrategyDecision:
 
 @dataclass(frozen=True)
 class Position:
+    token_id: int
+    token0: str
+    token1: str
+    fee: int
     lower_tick: int
     upper_tick: int
+    liquidity: int
+    tokens_owed0: int
+    tokens_owed1: int
 
 
 class Strategy:

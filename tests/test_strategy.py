@@ -24,8 +24,15 @@ def test_strategy_inside_and_outside_range():
     )
 
     position = Position(
+        token_id=82740,
+        token0="0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        token1="0x4200000000000000000000000000000000000006",
+        fee=500,
         lower_tick=219000,
         upper_tick=219200,
+        liquidity=339297883302,
+        tokens_owed0=0,
+        tokens_owed1=0,
     )
 
     pool_state = pool.read_state()
