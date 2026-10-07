@@ -1,9 +1,6 @@
 from dataclasses import dataclass
-import os
 import yaml
-from dotenv import load_dotenv
 
-load_dotenv()
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -11,16 +8,27 @@ class AppConfig:
     pool_address: str
     range_half_width: float
     check_interval: int
-    expected_chain_id: int = 8453
+    expected_chain_id: int
+    network: str
+
 
 def load_config() -> AppConfig:
-    rpc_url = os.getenv("BASE_RPC_URL", "https://mainnet.base.org").strip()
-
-    if not rpc_url:
-        raise ValueError("BASE_RPC_URL is empty")
-
     with open("config.yaml", "r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
+
+    network = config["network"]
+    networks = config["networks"]
+
+    if network not in networks:
+        raise ValueError(f"Unknown network: {network}")
+
+    network_config = networks[network]
+
+    rpc_url = network_config["rpc_url"].strip()
+    expected_chain_id = int(network_config["chain_id"])
+
+    if not rpc_url:
+        raise ValueError("RPC URL is empty")
 
     pool_address = config["pool"]["address"].strip()
 
@@ -32,4 +40,6 @@ def load_config() -> AppConfig:
         pool_address=pool_address,
         range_half_width=config["strategy"]["range_half_width"],
         check_interval=config["strategy"]["check_interval"],
+        expected_chain_id=expected_chain_id,
+        network=network,
     )

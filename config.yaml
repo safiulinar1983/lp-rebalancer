@@ -1,13 +1,22 @@
 # Stage 2: PancakeSwap V3 pool monitoring.
 
-network: base
+network: base_sepolia
+
+networks:
+  base:
+    chain_id: 8453
+    rpc_url: https://mainnet.base.org
+
+  base_sepolia:
+    chain_id: 84532
+    rpc_url: https://sepolia.base.org
+
 dex: pancakeswap_v3
 
 pool:
-  address: "0x26e263efdc91f0d3279E2Ec2Bd58A7Ca5C2fCE62"
+  address: "0x94bfc0574FF48E92cE43d495376C477B1d0EEeC0"
 
 strategy:
   range_half_width: 0.01
   check_interval: 5
-
-mode: DRY_RUN
+  mode: DRY_RUN
