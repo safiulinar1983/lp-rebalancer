@@ -1,37 +1,38 @@
 from web3 import Web3
 
-
-RPC_URL = "https://mainnet.base.org"
-
-WALLET_ADDRESS = Web3.to_checksum_address(
-    "0x87e58e8B5983FC4fF8199d3E16264ad39182a96e"
-)
-
-POSITION_MANAGER = Web3.to_checksum_address(
-    "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364"
-)
-
-POOL_ADDRESS = Web3.to_checksum_address(
-    "0x26e263efdc91f0d3279e2ec2bd58a7ca5c2fce62"
-)
-
-CB_BTC = Web3.to_checksum_address(
-    "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf"
-)
-
-USDC = Web3.to_checksum_address(
-    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
-)
+from config import load_config
 
 
 POSITION_MANAGER_ABI = [
     {
+        "inputs": [],
+        "name": "nextId",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
         "inputs": [
-            {
-                "internalType": "uint256",
-                "name": "tokenId",
-                "type": "uint256",
-            }
+            {"name": "owner", "type": "address"},
+        ],
+        "name": "balanceOf",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {"name": "owner", "type": "address"},
+            {"name": "index", "type": "uint256"},
+        ],
+        "name": "tokenOfOwnerByIndex",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {"name": "tokenId", "type": "uint256"},
         ],
         "name": "positions",
         "outputs": [
@@ -51,91 +52,66 @@ POSITION_MANAGER_ABI = [
         "stateMutability": "view",
         "type": "function",
     },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address",
-            }
-        ],
-        "name": "balanceOf",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256",
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function",
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "address",
-                "name": "owner",
-                "type": "address",
-            },
-            {
-                "internalType": "uint256",
-                "name": "index",
-                "type": "uint256",
-            },
-        ],
-        "name": "tokenOfOwnerByIndex",
-        "outputs": [
-            {
-                "internalType": "uint256",
-                "name": "",
-                "type": "uint256",
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function",
-    },
 ]
 
 
-w3 = Web3(Web3.HTTPProvider(RPC_URL))
+config = load_config()
+
+w3 = Web3(Web3.HTTPProvider(config.rpc_url))
 
 if not w3.is_connected():
-    raise RuntimeError("Cannot connect to Base RPC")
+    raise RuntimeError(f"Cannot connect to RPC: {config.rpc_url}")
+
+actual_chain_id = w3.eth.chain_id
+
+if actual_chain_id != config.expected_chain_id:
+    raise RuntimeError(
+        f"Wrong network: expected {config.expected_chain_id}, "
+        f"got {actual_chain_id}"
+    )
 
 
-manager = w3.eth.contract(
+POSITION_MANAGER = Web3.to_checksum_address(
+    "0x27F971cb582BF9E50F397e4d29a5C7A34f11faA2"
+)
+
+WALLET = Web3.to_checksum_address(
+    "0x87e58e8B5983FC4fF8199d3E16264ad39182a96e"
+)
+
+
+position_manager = w3.eth.contract(
     address=POSITION_MANAGER,
     abi=POSITION_MANAGER_ABI,
 )
 
 
-def get_positions():
-
-    count = manager.functions.balanceOf(
-        WALLET_ADDRESS
-    ).call()
+def inspect_positions():
+    balance = position_manager.functions.balanceOf(WALLET).call()
 
     print()
-    print("=" * 60)
-    print("PancakeSwap V3 Positions")
-    print("=" * 60)
-
-    print(f"Wallet:     {WALLET_ADDRESS}")
-    print(f"Positions:  {count}")
+    print("=" * 50)
+    print("PancakeSwap V3 LP Positions")
+    print("=" * 50)
+    print(f"Network:          {config.network}")
+    print(f"Chain ID:         {actual_chain_id}")
+    print(f"Wallet:           {WALLET}")
+    print(f"Position manager:  {POSITION_MANAGER}")
+    print(f"NFT positions:    {balance}")
     print()
 
-    found = 0
+    if balance == 0:
+        print("No LP positions found.")
+        print("=" * 50)
+        return
 
-    for i in range(count):
-
-        token_id = manager.functions.tokenOfOwnerByIndex(
-            WALLET_ADDRESS,
-            i,
+    for index in range(balance):
+        token_id = position_manager.functions.tokenOfOwnerByIndex(
+            WALLET,
+            index,
         ).call()
 
-        position = manager.functions.positions(
-            token_id
-        ).call()
+        position = position_manager.functions.positions(token_id).call()
 
         (
             nonce,
@@ -146,41 +122,25 @@ def get_positions():
             tick_lower,
             tick_upper,
             liquidity,
-            fee_growth_0,
-            fee_growth_1,
-            tokens_owed_0,
-            tokens_owed_1,
+            fee_growth_inside0,
+            fee_growth_inside1,
+            tokens_owed0,
+            tokens_owed1,
         ) = position
 
-        # We are interested only in our cbBTC/USDC 0.05% pool.
-        if (
-            Web3.to_checksum_address(token0) == USDC
-            and Web3.to_checksum_address(token1) == CB_BTC
-            and fee == 500
-        ):
-            found += 1
+        print(f"Token ID:       {token_id}")
+        print(f"Token0:         {token0}")
+        print(f"Token1:         {token1}")
+        print(f"Fee:            {fee}")
+        print(f"Tick lower:     {tick_lower}")
+        print(f"Tick upper:     {tick_upper}")
+        print(f"Liquidity:      {liquidity}")
+        print(f"Tokens owed 0:  {tokens_owed0}")
+        print(f"Tokens owed 1:  {tokens_owed1}")
+        print("-" * 50)
 
-            print("-" * 60)
-            print(f"Token ID:       {token_id}")
-            print(f"Token0:         {token0}")
-            print(f"Token1:         {token1}")
-            print(f"Fee:            {fee / 10_000:.2f}%")
-            print(f"Tick lower:     {tick_lower}")
-            print(f"Tick upper:     {tick_upper}")
-            print(f"Liquidity:      {liquidity}")
-            print(f"Tokens owed 0:  {tokens_owed_0}")
-            print(f"Tokens owed 1:  {tokens_owed_1}")
-            print()
-
-    print("-" * 60)
-
-    if found == 0:
-        print("No cbBTC/USDC 0.05% PancakeSwap V3 position found.")
-    else:
-        print(f"Found {found} matching position(s).")
-
-    print("=" * 60)
+    print("=" * 50)
 
 
 if __name__ == "__main__":
-    get_positions()
+    inspect_positions()
