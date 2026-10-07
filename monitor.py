@@ -56,6 +56,23 @@ POOL_ABI = [
     },
 ]
 
+ERC20_ABI = [
+    {
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{"name": "", "type": "uint8"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "symbol",
+        "outputs": [{"name": "", "type": "string"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
 
 # =========================
 # Configuration
@@ -122,11 +139,44 @@ def tick_to_price(tick, token0, token1):
 def print_pool_info():
     sqrt_price_x96, tick = get_pool_state()
 
-    token0 = pool.functions.token0().call()
-    token1 = pool.functions.token1().call()
+    token0_address = pool.functions.token0().call()
+    token1_address = pool.functions.token1().call()
 
     fee = pool.functions.fee().call()
     tick_spacing = pool.functions.tickSpacing().call()
+
+    token0 = w3.eth.contract(
+        address=Web3.to_checksum_address(token0_address),
+        abi=ERC20_ABI,
+    )
+
+    token1 = w3.eth.contract(
+        address=Web3.to_checksum_address(token1_address),
+        abi=ERC20_ABI,
+    )
+
+    token0_symbol = token0.functions.symbol().call()
+    token1_symbol = token1.functions.symbol().call()
+
+    token0_decimals = token0.functions.decimals().call()
+    token1_decimals = token1.functions.decimals().call()
+
+    # V3 sqrt price:
+    # price(token1 in token0) =
+    # (sqrtPriceX96 / 2^96)^2
+    # adjusted for token decimals.
+    raw_price = (
+        Decimal(sqrt_price_x96) ** 2
+        / Decimal(2**192)
+    )
+
+    price_token1_in_token0 = (
+        Decimal(1)
+        / (
+            raw_price
+            * Decimal(10) ** (token0_decimals - token1_decimals)
+        )
+    )
 
     print()
     print("=" * 50)
@@ -135,13 +185,27 @@ def print_pool_info():
     print(f"Network:       {config.network}")
     print(f"Chain ID:      {actual_chain_id}")
     print(f"Pool:          {POOL_ADDRESS}")
-    print(f"Token0:        {token0}")
-    print(f"Token1:        {token1}")
+    print()
+    print(
+        f"Token0:        {token0_symbol} "
+        f"({token0_address})"
+    )
+    print(
+        f"Token1:        {token1_symbol} "
+        f"({token1_address})"
+    )
+    print()
+    print(f"Decimals:      {token0_decimals} / {token1_decimals}")
     print(f"Fee:           {fee / 10_000:.2f}%")
     print(f"Tick spacing:  {tick_spacing}")
     print()
     print(f"sqrtPriceX96:  {sqrt_price_x96}")
     print(f"Current tick:  {tick}")
+    print(
+        f"Price:         "
+        f"1 {token1_symbol} = "
+        f"{price_token1_in_token0:.6f} {token0_symbol}"
+    )
     print()
     print("Status:        MONITORING")
     print("=" * 50)
