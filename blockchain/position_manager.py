@@ -41,6 +41,66 @@ POSITION_MANAGER_ABI = [
         "stateMutability": "view",
         "type": "function",
     },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {"name": "tokenId", "type": "uint256"},
+                    {"name": "liquidity", "type": "uint128"},
+                    {"name": "amount0Min", "type": "uint256"},
+                    {"name": "amount1Min", "type": "uint256"},
+                    {"name": "deadline", "type": "uint256"},
+                ],
+                "name": "params",
+                "type": "tuple",
+            }
+        ],
+        "name": "decreaseLiquidity",
+        "outputs": [
+            {"name": "amount0", "type": "uint256"},
+            {"name": "amount1", "type": "uint256"},
+        ],
+        "stateMutability": "payable",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {
+                "components": [
+                    {"name": "tokenId", "type": "uint256"},
+                    {"name": "recipient", "type": "address"},
+                    {"name": "amount0Max", "type": "uint128"},
+                    {"name": "amount1Max", "type": "uint128"},
+                ],
+                "name": "params",
+                "type": "tuple",
+            }
+        ],
+        "name": "collect",
+        "outputs": [
+            {"name": "amount0", "type": "uint256"},
+            {"name": "amount1", "type": "uint256"},
+        ],
+        "stateMutability": "payable",
+        "type": "function",
+    },
+    {
+        "inputs": [
+            {
+                "name": "data",
+                "type": "bytes[]",
+            }
+        ],
+        "name": "multicall",
+        "outputs": [
+            {
+                "name": "results",
+                "type": "bytes[]",
+            }
+        ],
+        "stateMutability": "payable",
+        "type": "function",
+    },
 ]
 
 
@@ -91,6 +151,80 @@ class PositionManager:
             f"No LP position found for "
             f"{token0}/{token1} fee={fee}"
         )
+
+    def simulate_decrease_liquidity(
+        self,
+        token_id: int,
+        liquidity: int,
+    ) -> tuple[int, int]:
+        params = (
+            token_id,
+            liquidity,
+            0,
+            0,
+            self.w3.eth.get_block("latest")["timestamp"] + 600,
+        )
+
+        return self.contract.functions.decreaseLiquidity(
+            params
+        ).call({
+            "from": self.wallet,
+        })
+
+    def simulate_decrease_and_collect(
+        self,
+        token_id: int,
+        liquidity: int,
+    ) -> list[bytes]:
+        decrease_params = (
+            token_id,
+            liquidity,
+            0,
+            0,
+            self.w3.eth.get_block("latest")["timestamp"] + 600,
+        )
+
+        collect_params = (
+            token_id,
+            self.wallet,
+            2**128 - 1,
+            2**128 - 1,
+        )
+
+        decrease_data = (
+            self.contract.functions.decreaseLiquidity(
+                decrease_params
+            )._encode_transaction_data()
+        )
+
+        collect_data = (
+            self.contract.functions.collect(
+                collect_params
+            )._encode_transaction_data()
+        )
+
+        return self.contract.functions.multicall(
+            [decrease_data, collect_data]
+        ).call({
+            "from": self.wallet,
+        })
+
+    def simulate_collect_fees(
+        self,
+        token_id: int,
+    ) -> tuple[int, int]:
+        collect_params = (
+            token_id,
+            self.wallet,
+            2**128 - 1,
+            2**128 - 1,
+        )
+
+        return self.contract.functions.collect(
+            collect_params
+        ).call({
+            "from": self.wallet,
+        })
 
     def read_position(self, token_id: int) -> Position:
         data = self.contract.functions.positions(
