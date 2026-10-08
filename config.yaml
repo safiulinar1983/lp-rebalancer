@@ -20,6 +20,7 @@ strategy:
   range_half_width: 0.01
   check_interval: 5
   mode: DRY_RUN
+  fee_threshold_usd: 0.10
 
 position_manager:
   address: "0x27F971cb582BF9E50F397e4d29a5C7A34f11faA2"

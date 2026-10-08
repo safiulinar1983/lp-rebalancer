@@ -28,11 +28,19 @@ class Position:
 
 
 class Strategy:
-    def __init__(self, range_half_width: Decimal):
+    def __init__(
+        self,
+        range_half_width: Decimal,
+        fee_threshold_usd: Decimal = Decimal("0.10"),
+    ):
         if range_half_width <= 0:
             raise ValueError("range_half_width must be positive")
 
+        if fee_threshold_usd < 0:
+            raise ValueError("fee_threshold_usd must be non-negative")
+
         self.range_half_width = range_half_width
+        self.fee_threshold_usd = fee_threshold_usd
 
     def evaluate(self, state: PoolState, position: Position) -> StrategyDecision:
         lower_tick = position.lower_tick
