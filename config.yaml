@@ -27,3 +27,9 @@ position_manager:
 
 wallet:
   address: "0x87e58e8B5983FC4fF8199d3E16264ad39182a96e"
+    
+# Chainlink price feeds (addresses to be verified for the selected network)
+oracle:
+  token0_usd_feed: ""
+  token1_usd_feed: ""
+  max_age_seconds: 3600

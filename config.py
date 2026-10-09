@@ -13,6 +13,9 @@ class AppConfig:
     network: str
     position_manager_address: str
     wallet_address: str
+    token0_usd_feed: str
+    token1_usd_feed: str
+    oracle_max_age_seconds: int
 
 
 def load_config() -> AppConfig:
@@ -41,6 +44,7 @@ def load_config() -> AppConfig:
     position_manager_address = config["position_manager"]["address"].strip()
     wallet_address = config["wallet"]["address"].strip()
 
+    oracle_config = config.get("oracle", {})
     return AppConfig(
         rpc_url=rpc_url,
         pool_address=pool_address,
@@ -51,4 +55,7 @@ def load_config() -> AppConfig:
         network=network,
         position_manager_address=position_manager_address,
         wallet_address=wallet_address,
+        token0_usd_feed=str(oracle_config.get("token0_usd_feed", "")).strip(),
+        token1_usd_feed=str(oracle_config.get("token1_usd_feed", "")).strip(),
+        oracle_max_age_seconds=int(oracle_config.get("max_age_seconds", 3600)),
     )
