@@ -1,4 +1,5 @@
 from web3 import Web3
+from decimal import Decimal
 
 from config import load_config
 from blockchain.pancake_v3 import PancakeV3Pool
@@ -33,6 +34,7 @@ position_manager = PositionManager(
 
 strategy = Strategy(
     range_half_width=config.range_half_width,
+    fee_threshold_usd=Decimal(str(config.fee_threshold_usd)),
 )
 
 

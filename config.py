@@ -7,6 +7,7 @@ class AppConfig:
     rpc_url: str
     pool_address: str
     range_half_width: float
+    fee_threshold_usd: float
     check_interval: int
     expected_chain_id: int
     network: str
@@ -44,6 +45,7 @@ def load_config() -> AppConfig:
         rpc_url=rpc_url,
         pool_address=pool_address,
         range_half_width=config["strategy"]["range_half_width"],
+        fee_threshold_usd=float(config["strategy"]["fee_threshold_usd"]),
         check_interval=config["strategy"]["check_interval"],
         expected_chain_id=expected_chain_id,
         network=network,
