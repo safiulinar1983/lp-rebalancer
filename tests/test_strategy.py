@@ -1,4 +1,5 @@
 from dataclasses import replace
+from decimal import Decimal
 
 from web3 import Web3
 
@@ -62,3 +63,27 @@ def test_strategy_inside_and_outside_range():
 
     assert outside_decision.action == "REBALANCE"
     assert outside_decision.in_range is False
+
+    # Fees above threshold: collect fees
+    collect_decision = strategy.evaluate(
+        pool_inside,
+        position,
+        fees_value_usd=Decimal("0.15"),
+    )
+    assert collect_decision.action == "COLLECT_FEES"
+
+    # Fees below threshold: hold
+    hold_decision = strategy.evaluate(
+        pool_inside,
+        position,
+        fees_value_usd=Decimal("0.05"),
+    )
+    assert hold_decision.action == "HOLD"
+
+    # Out of range: rebalance takes priority
+    rebalance_decision = strategy.evaluate(
+        pool_outside,
+        position,
+        fees_value_usd=Decimal("0.15"),
+    )
+    assert rebalance_decision.action == "REBALANCE"

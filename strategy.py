@@ -42,7 +42,12 @@ class Strategy:
         self.range_half_width = range_half_width
         self.fee_threshold_usd = fee_threshold_usd
 
-    def evaluate(self, state: PoolState, position: Position) -> StrategyDecision:
+    def evaluate(
+        self,
+        state: PoolState,
+        position: Position,
+        fees_value_usd: Decimal = Decimal("0"),
+    ) -> StrategyDecision:
         lower_tick = position.lower_tick
         upper_tick = position.upper_tick
 
@@ -52,10 +57,17 @@ class Strategy:
             upper_tick,
         )
 
+        if not in_range:
+            action = "REBALANCE"
+        elif fees_value_usd >= self.fee_threshold_usd:
+            action = "COLLECT_FEES"
+        else:
+            action = "HOLD"
+
         return StrategyDecision(
             current_tick=state.tick,
             lower_tick=lower_tick,
             upper_tick=upper_tick,
             in_range=in_range,
-            action="HOLD" if in_range else "REBALANCE",
+            action=action,
         )
