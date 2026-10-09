@@ -59,6 +59,7 @@ fees_value_usd = calculate_fees_value_usd(
     amount1_raw,
     pool_state.token0_decimals,
     pool_state.token1_decimals,
+    Decimal("1"),
     Decimal(str(pool_state.price)),
 )
 
@@ -67,7 +68,6 @@ decision = strategy.evaluate(
     position,
     fees_value_usd=fees_value_usd,
 )
-
 
 print("=" * 50)
 print("LP POSITION MONITOR")

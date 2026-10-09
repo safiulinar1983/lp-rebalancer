@@ -6,8 +6,10 @@ def calculate_fees_value_usd(
     amount1_raw: int,
     token0_decimals: int,
     token1_decimals: int,
+    token0_price_usd: Decimal,
     token1_price_usd: Decimal,
 ) -> Decimal:
-    token0_value = Decimal(amount0_raw) / Decimal(10**token0_decimals)
-    token1_amount = Decimal(amount1_raw) / Decimal(10**token1_decimals)
-    return token0_value + token1_amount * token1_price_usd
+    amount0 = Decimal(amount0_raw) / Decimal(10**token0_decimals)
+    amount1 = Decimal(amount1_raw) / Decimal(10**token1_decimals)
+
+    return amount0 * token0_price_usd + amount1 * token1_price_usd
