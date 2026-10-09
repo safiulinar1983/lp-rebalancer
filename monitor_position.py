@@ -48,9 +48,25 @@ position = position_manager.find_position(
 
 token_id = position.token_id
 
+# Simulate fee collection without sending a transaction.
+amount0_raw, amount1_raw = position_manager.simulate_collect_fees(
+    token_id
+)
+
+fees_token0 = Decimal(amount0_raw) / (
+    Decimal(10) ** pool_state.token0_decimals
+)
+fees_token1 = Decimal(amount1_raw) / (
+    Decimal(10) ** pool_state.token1_decimals
+)
+
+# Current pool: token0 is USDC, token1 is WETH.
+fees_value_usd = fees_token0 + fees_token1 * pool_state.price
+
 decision = strategy.evaluate(
     pool_state,
     position,
+    fees_value_usd=fees_value_usd,
 )
 
 
@@ -69,5 +85,6 @@ print(f"Liquidity:     {position.liquidity}")
 print(f"Tokens owed 0: {position.tokens_owed0}")
 print(f"Tokens owed 1: {position.tokens_owed1}")
 print()
+print(f"Fees value:    ${fees_value_usd:.6f}")
 print(f"Decision:      {decision}")
 print("=" * 50)
