@@ -4,6 +4,7 @@ from decimal import Decimal
 from config import load_config
 from blockchain.pancake_v3 import PancakeV3Pool
 from blockchain.position_manager import PositionManager
+from blockchain.fees import calculate_fees_value_usd
 from strategy import Strategy
 
 
@@ -53,15 +54,13 @@ amount0_raw, amount1_raw = position_manager.simulate_collect_fees(
     token_id
 )
 
-fees_token0 = Decimal(amount0_raw) / (
-    Decimal(10) ** pool_state.token0_decimals
+fees_value_usd = calculate_fees_value_usd(
+    amount0_raw,
+    amount1_raw,
+    pool_state.token0_decimals,
+    pool_state.token1_decimals,
+    Decimal(str(pool_state.price)),
 )
-fees_token1 = Decimal(amount1_raw) / (
-    Decimal(10) ** pool_state.token1_decimals
-)
-
-# Current pool: token0 is USDC, token1 is WETH.
-fees_value_usd = fees_token0 + fees_token1 * pool_state.price
 
 decision = strategy.evaluate(
     pool_state,
