@@ -5,6 +5,7 @@ from config import load_config
 from blockchain.pancake_v3 import PancakeV3Pool
 from blockchain.position_manager import PositionManager
 from blockchain.fees import calculate_fees_value_usd
+from blockchain.oracle import get_token_price_usd
 from strategy import Strategy
 
 
@@ -41,6 +42,32 @@ strategy = Strategy(
 
 pool_state = pool.read_state()
 
+# Use Chainlink only when both token feeds are configured.
+token0_feed = config.token0_usd_feed
+token1_feed = config.token1_usd_feed
+
+if bool(token0_feed) != bool(token1_feed):
+    raise RuntimeError(
+        "Configure both Chainlink feeds or leave both addresses empty."
+    )
+
+if token0_feed and token1_feed:
+    try:
+        token0_price_usd = get_token_price_usd(
+            w3, token0_feed, config.oracle_max_age_seconds
+        )
+        token1_price_usd = get_token_price_usd(
+            w3, token1_feed, config.oracle_max_age_seconds
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            f"Chainlink price unavailable; stopping monitor: {exc}"
+        ) from exc
+else:
+    # Temporary fallback until verified feed addresses are configured.
+    token0_price_usd = Decimal("1")
+    token1_price_usd = Decimal(str(pool_state.price))
+
 position = position_manager.find_position(
     token0=pool_state.token0,
     token1=pool_state.token1,
@@ -59,8 +86,8 @@ fees_value_usd = calculate_fees_value_usd(
     amount1_raw,
     pool_state.token0_decimals,
     pool_state.token1_decimals,
-    Decimal("1"),
-    Decimal(str(pool_state.price)),
+    token0_price_usd,
+    token1_price_usd,
 )
 
 decision = strategy.evaluate(
