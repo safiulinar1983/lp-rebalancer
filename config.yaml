@@ -31,5 +31,5 @@ wallet:
 # Chainlink price feeds (addresses to be verified for the selected network)
 oracle:
   token0_usd_feed: ""
-  token1_usd_feed: ""
+  token1_usd_feed: "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1"
   max_age_seconds: 3600

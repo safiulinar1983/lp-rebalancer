@@ -42,31 +42,26 @@ strategy = Strategy(
 
 pool_state = pool.read_state()
 
-# Use Chainlink only when both token feeds are configured.
+# Use configured Chainlink feeds independently.
+# For this test pool, an unconfigured token0 (USDC) is assumed to be $1.
 token0_feed = config.token0_usd_feed
 token1_feed = config.token1_usd_feed
 
-if bool(token0_feed) != bool(token1_feed):
-    raise RuntimeError(
-        "Configure both Chainlink feeds or leave both addresses empty."
+try:
+    token0_price_usd = (
+        get_token_price_usd(w3, token0_feed, config.oracle_max_age_seconds)
+        if token0_feed
+        else Decimal("1")
     )
-
-if token0_feed and token1_feed:
-    try:
-        token0_price_usd = get_token_price_usd(
-            w3, token0_feed, config.oracle_max_age_seconds
-        )
-        token1_price_usd = get_token_price_usd(
-            w3, token1_feed, config.oracle_max_age_seconds
-        )
-    except Exception as exc:
-        raise RuntimeError(
-            f"Chainlink price unavailable; stopping monitor: {exc}"
-        ) from exc
-else:
-    # Temporary fallback until verified feed addresses are configured.
-    token0_price_usd = Decimal("1")
-    token1_price_usd = Decimal(str(pool_state.price))
+    token1_price_usd = (
+        get_token_price_usd(w3, token1_feed, config.oracle_max_age_seconds)
+        if token1_feed
+        else Decimal(str(pool_state.price))
+    )
+except Exception as exc:
+    raise RuntimeError(
+        f"Price unavailable; stopping monitor: {exc}"
+    ) from exc
 
 position = position_manager.find_position(
     token0=pool_state.token0,
