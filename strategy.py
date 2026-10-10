@@ -12,6 +12,8 @@ class StrategyDecision:
     upper_tick: int
     in_range: bool
     action: str
+    proposed_lower_tick: int | None = None
+    proposed_upper_tick: int | None = None
 
 
 @dataclass(frozen=True)
@@ -57,8 +59,24 @@ class Strategy:
             upper_tick,
         )
 
+        proposed_lower_tick = None
+        proposed_upper_tick = None
+
         if not in_range:
             action = "REBALANCE"
+
+            proposed_lower_tick, proposed_upper_tick = price_range_ticks(
+                state.price,
+                self.range_half_width,
+                state.tick_spacing,
+                state.token0_decimals,
+                state.token1_decimals,
+            )
+
+            if not proposed_lower_tick <= state.tick < proposed_upper_tick:
+                raise ValueError(
+                    "Calculated range does not contain the current tick"
+                )
         elif fees_value_usd >= self.fee_threshold_usd:
             action = "COLLECT_FEES"
         else:
@@ -70,4 +88,6 @@ class Strategy:
             upper_tick=upper_tick,
             in_range=in_range,
             action=action,
+            proposed_lower_tick=proposed_lower_tick,
+            proposed_upper_tick=proposed_upper_tick,
         )

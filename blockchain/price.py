@@ -201,10 +201,11 @@ def is_tick_in_range(
     """
     Returns True if the current V3 tick is inside the position range.
 
-    The lower and upper ticks are inclusive.
+    The lower tick is inclusive; the upper tick is exclusive,
+    matching Uniswap/PancakeSwap V3 position range semantics.
     """
 
     if lower_tick >= upper_tick:
         raise ValueError("lower_tick must be less than upper_tick")
 
-    return lower_tick <= tick <= upper_tick
+    return lower_tick <= tick < upper_tick

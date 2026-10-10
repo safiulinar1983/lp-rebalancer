@@ -1,33 +1,36 @@
 from dataclasses import replace
 from decimal import Decimal
 
-from web3 import Web3
+import pytest
 
-from config import load_config
-from blockchain.pancake_v3 import PancakeV3Pool
-from strategy import Strategy, Position
+from blockchain.pancake_v3 import PoolState
+from blockchain.price import price_from_tick
+from strategy import Position, Strategy
 
 
-def test_strategy_inside_and_outside_range():
-    config = load_config()
-
-    w3 = Web3(Web3.HTTPProvider(config.rpc_url))
-
-    assert w3.is_connected()
-
-    pool = PancakeV3Pool(
-        w3=w3,
-        address=config.pool_address,
+@pytest.fixture
+def pool_state():
+    return PoolState(
+        address="0x0000000000000000000000000000000000000001",
+        token0="0x0000000000000000000000000000000000000002",
+        token1="0x0000000000000000000000000000000000000003",
+        token0_decimals=6,
+        token1_decimals=18,
+        fee=500,
+        tick_spacing=10,
+        sqrt_price_x96=1,
+        tick=219103,
+        liquidity=1000000,
+        price=Decimal("1"),
     )
 
-    strategy = Strategy(
-        range_half_width=config.range_half_width,
-    )
 
-    position = Position(
+@pytest.fixture
+def position():
+    return Position(
         token_id=82740,
-        token0="0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-        token1="0x4200000000000000000000000000000000000006",
+        token0="0x0000000000000000000000000000000000000002",
+        token1="0x0000000000000000000000000000000000000003",
         fee=500,
         lower_tick=219000,
         upper_tick=219200,
@@ -36,54 +39,135 @@ def test_strategy_inside_and_outside_range():
         tokens_owed1=0,
     )
 
-    pool_state = pool.read_state()
 
-    pool_inside = replace(
+@pytest.fixture
+def strategy():
+    return Strategy(
+        range_half_width=Decimal("0.01"),
+    )
+
+
+def test_strategy_holds_when_inside_range(
+    strategy, pool_state, position
+):
+    decision = strategy.evaluate(pool_state, position)
+
+    assert decision.action == "HOLD"
+    assert decision.in_range is True
+
+
+def test_strategy_rebalances_when_below_range(
+    strategy, pool_state, position
+):
+    state = replace(
         pool_state,
-        tick=219103,
+        tick=218999,
+        price=price_from_tick(218999, 6, 18),
     )
 
-    pool_outside = replace(
+    decision = strategy.evaluate(state, position)
+
+    assert decision.action == "REBALANCE"
+    assert decision.in_range is False
+
+
+def test_strategy_rebalances_when_above_range(
+    strategy, pool_state, position
+):
+    state = replace(
         pool_state,
-        tick=219250,
+        tick=219201,
+        price=price_from_tick(219201, 6, 18),
     )
 
-    inside_decision = strategy.evaluate(
-        pool_inside,
-        position,
-    )
+    decision = strategy.evaluate(state, position)
 
-    outside_decision = strategy.evaluate(
-        pool_outside,
-        position,
-    )
+    assert decision.action == "REBALANCE"
+    assert decision.in_range is False
 
-    assert inside_decision.action == "HOLD"
-    assert inside_decision.in_range is True
 
-    assert outside_decision.action == "REBALANCE"
-    assert outside_decision.in_range is False
-
-    # Fees above threshold: collect fees
-    collect_decision = strategy.evaluate(
-        pool_inside,
+def test_strategy_collects_fees_above_threshold(
+    strategy, pool_state, position
+):
+    decision = strategy.evaluate(
+        pool_state,
         position,
         fees_value_usd=Decimal("0.15"),
     )
-    assert collect_decision.action == "COLLECT_FEES"
 
-    # Fees below threshold: hold
-    hold_decision = strategy.evaluate(
-        pool_inside,
+    assert decision.action == "COLLECT_FEES"
+    assert decision.in_range is True
+
+
+def test_strategy_holds_when_fees_below_threshold(
+    strategy, pool_state, position
+):
+    decision = strategy.evaluate(
+        pool_state,
         position,
         fees_value_usd=Decimal("0.05"),
     )
-    assert hold_decision.action == "HOLD"
 
-    # Out of range: rebalance takes priority
-    rebalance_decision = strategy.evaluate(
-        pool_outside,
+    assert decision.action == "HOLD"
+
+
+def test_rebalance_has_priority_over_fee_collection(
+    strategy, pool_state, position
+):
+    state = replace(
+        pool_state,
+        tick=219250,
+        price=price_from_tick(219250, 6, 18),
+    )
+
+    decision = strategy.evaluate(
+        state,
         position,
         fees_value_usd=Decimal("0.15"),
     )
-    assert rebalance_decision.action == "REBALANCE"
+
+    assert decision.action == "REBALANCE"
+    assert decision.in_range is False
+
+
+def test_strategy_rejects_non_positive_range_width():
+    with pytest.raises(ValueError, match="range_half_width"):
+        Strategy(range_half_width=Decimal("0"))
+
+
+def test_strategy_rejects_negative_fee_threshold():
+    with pytest.raises(ValueError, match="fee_threshold_usd"):
+        Strategy(
+            range_half_width=Decimal("0.01"),
+            fee_threshold_usd=Decimal("-0.01"),
+        )
+
+
+def test_strategy_proposes_new_range_when_out_of_range(
+    strategy, pool_state, position
+):
+    state = replace(
+        pool_state,
+        tick=219250,
+        price=price_from_tick(219250, 6, 18),
+    )
+
+    decision = strategy.evaluate(state, position)
+
+    assert decision.action == "REBALANCE"
+    assert decision.proposed_lower_tick is not None
+    assert decision.proposed_upper_tick is not None
+    assert decision.proposed_lower_tick < state.tick
+    assert decision.proposed_upper_tick > state.tick
+    assert decision.proposed_lower_tick % state.tick_spacing == 0
+    assert decision.proposed_upper_tick % state.tick_spacing == 0
+
+
+def test_strategy_does_not_propose_new_range_when_in_range(
+    strategy, pool_state, position
+):
+    decision = strategy.evaluate(pool_state, position)
+
+    assert decision.action == "HOLD"
+    assert decision.proposed_lower_tick is None
+    assert decision.proposed_upper_tick is None
