@@ -2,7 +2,7 @@ from web3 import Web3
 from decimal import Decimal
 
 from config import load_config
-from blockchain.pancake_v3 import PancakeV3Pool
+from blockchain.dex_manager import DEXManager
 from blockchain.position_manager import PositionManager
 from blockchain.fees import calculate_fees_value_usd
 from blockchain.oracle import get_token_price_usd
@@ -23,9 +23,10 @@ if w3.eth.chain_id != config.expected_chain_id:
     )
 
 
-pool = PancakeV3Pool(
+pool = DEXManager.create_pool(
+    dex_name=config.dex,
     w3=w3,
-    address=config.pool_address,
+    pool_address=config.pool_address,
 )
 
 position_manager = PositionManager(

@@ -11,6 +11,7 @@ class AppConfig:
     check_interval: int
     expected_chain_id: int
     network: str
+    dex: str
     position_manager_address: str
     wallet_address: str
     token0_usd_feed: str
@@ -53,6 +54,7 @@ def load_config() -> AppConfig:
         check_interval=config["strategy"]["check_interval"],
         expected_chain_id=expected_chain_id,
         network=network,
+        dex=str(config.get("dex", "pancakeswap_v3")).strip().lower(),
         position_manager_address=position_manager_address,
         wallet_address=wallet_address,
         token0_usd_feed=str(oracle_config.get("token0_usd_feed", "")).strip(),
