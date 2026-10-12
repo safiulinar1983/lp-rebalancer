@@ -246,3 +246,77 @@ def test_below_range_needs_no_swap_when_token1_balance_is_zero():
     )
 
     assert estimate is None
+
+
+def test_amounts_per_liquidity_at_lower_boundary():
+    lower_tick = 200
+    upper_tick = 400
+    sqrt_price = sqrt_ratio_at_tick(lower_tick)
+
+    amounts = amounts_per_liquidity(
+        sqrt_price, lower_tick, upper_tick
+    )
+
+    sqrt_lower = sqrt_ratio_at_tick(lower_tick)
+    sqrt_upper = sqrt_ratio_at_tick(upper_tick)
+
+    expected_amount0 = (
+        (sqrt_upper - sqrt_lower) / (sqrt_lower * sqrt_upper)
+    )
+
+    assert amounts.amount0 == expected_amount0
+    assert amounts.amount1 == 0
+
+
+def test_amounts_per_liquidity_at_upper_boundary():
+    lower_tick = 200
+    upper_tick = 400
+    sqrt_price = sqrt_ratio_at_tick(upper_tick)
+
+    amounts = amounts_per_liquidity(
+        sqrt_price, lower_tick, upper_tick
+    )
+
+    sqrt_lower = sqrt_ratio_at_tick(lower_tick)
+    sqrt_upper = sqrt_ratio_at_tick(upper_tick)
+
+    assert amounts.amount0 == 0
+    assert amounts.amount1 == sqrt_upper - sqrt_lower
+
+
+def test_amounts_per_liquidity_inside_range_matches_formulas():
+    lower_tick = 200
+    upper_tick = 400
+    sqrt_price = sqrt_ratio_at_tick(300)
+
+    amounts = amounts_per_liquidity(
+        sqrt_price, lower_tick, upper_tick
+    )
+
+    sqrt_lower = sqrt_ratio_at_tick(lower_tick)
+    sqrt_upper = sqrt_ratio_at_tick(upper_tick)
+
+    expected_amount0 = (
+        (sqrt_upper - sqrt_price) / (sqrt_price * sqrt_upper)
+    )
+    expected_amount1 = sqrt_price - sqrt_lower
+
+    assert amounts.amount0 == expected_amount0
+    assert amounts.amount1 == expected_amount1
+    assert amounts.amount0 > 0
+    assert amounts.amount1 > 0
+
+
+def test_amounts_per_liquidity_exact_boundaries_and_formula():
+    lower_tick = 200
+    upper_tick = 400
+
+    lower = amounts_per_liquidity(
+        sqrt_ratio_at_tick(lower_tick), lower_tick, upper_tick
+    )
+    upper = amounts_per_liquidity(
+        sqrt_ratio_at_tick(upper_tick), lower_tick, upper_tick
+    )
+
+    assert lower.amount1 == 0
+    assert upper.amount0 == 0
