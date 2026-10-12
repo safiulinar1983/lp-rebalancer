@@ -1,0 +1,140 @@
+from decimal import Decimal
+
+import pytest
+
+from blockchain.liquidity_math import (
+    Q96,
+    amounts_per_liquidity,
+    estimate_swap_to_balance,
+    sqrt_ratio_at_tick,
+)
+
+
+def test_price_below_range_requires_only_token0():
+    amounts = amounts_per_liquidity(
+        sqrt_ratio_at_tick(100),
+        200,
+        400,
+    )
+
+    assert amounts.amount0 > 0
+    assert amounts.amount1 == 0
+
+
+def test_price_inside_range_requires_both_tokens():
+    amounts = amounts_per_liquidity(
+        sqrt_ratio_at_tick(300),
+        200,
+        400,
+    )
+
+    assert amounts.amount0 > 0
+    assert amounts.amount1 > 0
+
+
+def test_price_above_range_requires_only_token1():
+    amounts = amounts_per_liquidity(
+        sqrt_ratio_at_tick(500),
+        200,
+        400,
+    )
+
+    assert amounts.amount0 == 0
+    assert amounts.amount1 > 0
+
+
+def test_invalid_tick_is_rejected():
+    with pytest.raises(ValueError, match="Tick outside"):
+        sqrt_ratio_at_tick(887273)
+
+
+def test_invalid_range_is_rejected():
+    with pytest.raises(ValueError, match="lower_tick"):
+        amounts_per_liquidity(
+            Decimal("1"),
+            200,
+            200,
+        )
+
+
+def test_negative_balance_is_rejected():
+    with pytest.raises(ValueError, match="cannot be negative"):
+        estimate_swap_to_balance(
+            -1,
+            100,
+            int(Q96),
+            -100,
+            100,
+        )
+
+
+def test_zero_sqrt_price_is_rejected():
+    with pytest.raises(ValueError, match="must be positive"):
+        estimate_swap_to_balance(
+            100,
+            100,
+            0,
+            -100,
+            100,
+        )
+
+
+def test_swap_from_token0_when_token0_is_in_surplus():
+    estimate = estimate_swap_to_balance(
+        balance0=1_000_000,
+        balance1=1,
+        sqrt_price_x96=int(Q96),
+        lower_tick=-100,
+        upper_tick=100,
+    )
+
+    assert estimate is not None
+    assert estimate.token_in == 0
+    assert estimate.amount_in > 0
+    assert estimate.expected_amount_out > 0
+
+
+def test_swap_from_token1_when_token1_is_in_surplus():
+    estimate = estimate_swap_to_balance(
+        balance0=1,
+        balance1=1_000_000,
+        sqrt_price_x96=int(Q96),
+        lower_tick=-100,
+        upper_tick=100,
+    )
+
+    assert estimate is not None
+    assert estimate.token_in == 1
+    assert estimate.amount_in > 0
+    assert estimate.expected_amount_out > 0
+
+
+def test_no_swap_when_balances_match_required_ratio():
+    sqrt_price_x96 = int(Q96)
+    lower_tick = -100
+    upper_tick = 100
+
+    amounts = amounts_per_liquidity(
+        Decimal(sqrt_price_x96) / Q96,
+        lower_tick,
+        upper_tick,
+    )
+
+    # Use a large integer approximation of the required ratio.
+    scale = Decimal(10**12)
+    balance0 = int(amounts.amount0 * scale)
+    balance1 = int(amounts.amount1 * scale)
+
+    estimate = estimate_swap_to_balance(
+        balance0,
+        balance1,
+        sqrt_price_x96,
+        lower_tick,
+        upper_tick,
+    )
+
+    assert estimate is None or estimate.amount_in < Decimal("1")
+
+
+def test_sqrt_ratio_at_tick_zero_is_one():
+    assert sqrt_ratio_at_tick(0) == Decimal("1")
