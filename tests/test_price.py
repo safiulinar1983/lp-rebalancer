@@ -121,3 +121,20 @@ def test_is_tick_in_range_lower_inclusive_upper_exclusive():
 def test_is_tick_in_range_rejects_invalid_range():
     with pytest.raises(ValueError, match="lower_tick"):
         is_tick_in_range(10, 20, 20)
+
+
+def test_tick_from_price_rounds_positive_fraction_down():
+    from decimal import Decimal
+    from blockchain.price import tick_from_price
+
+    # The inverse price convention reverses the tick sign.
+    price = Decimal("1.0001") ** Decimal("-100.7")
+    assert tick_from_price(price, 0, 0) == 100
+
+
+def test_tick_from_price_rounds_negative_fraction_down():
+    from decimal import Decimal
+    from blockchain.price import tick_from_price
+
+    price = Decimal("1.0001") ** Decimal("100.7")
+    assert tick_from_price(price, 0, 0) == -101
