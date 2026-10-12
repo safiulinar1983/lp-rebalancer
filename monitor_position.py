@@ -109,11 +109,14 @@ def main() -> None:
         "tokens_owed0": str(position.tokens_owed0),
         "tokens_owed1": str(position.tokens_owed1),
         "fees_value_usd": str(fees_value_usd),
-        "decision": str(decision),
+        "decision": decision.action,
+        "in_range": decision.in_range,
+        "proposed_lower_tick": decision.proposed_lower_tick,
+        "proposed_upper_tick": decision.proposed_upper_tick,
     }
 
     store.record_event("monitor_snapshot", snapshot)
-    store.record_decision(str(decision), snapshot)
+    store.record_decision(decision.action, snapshot)
 
     print("=" * 50)
     print("LP POSITION MONITOR")

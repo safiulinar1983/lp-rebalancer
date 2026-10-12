@@ -172,11 +172,14 @@ def test_monitor_snapshot_and_decision_are_persisted(tmp_path):
         "lower_tick": 219000,
         "upper_tick": 219200,
         "fees_value_usd": "0.12",
-        "decision": "IN_RANGE",
+        "decision": "REBALANCE",
+        "in_range": False,
+        "proposed_lower_tick": 219100,
+        "proposed_upper_tick": 219300,
     }
 
     store.record_event("monitor_snapshot", snapshot)
-    decision_id = store.record_decision("IN_RANGE", snapshot)
+    decision_id = store.record_decision("REBALANCE", snapshot)
 
     events = store.list_events()
     decisions = store.list_decisions()
@@ -186,4 +189,8 @@ def test_monitor_snapshot_and_decision_are_persisted(tmp_path):
     assert events[1]["payload"]["token_id"] == 82740
     assert events[1]["payload"]["current_tick"] == 219103
     assert decisions[0]["id"] == decision_id
+    assert decisions[0]["decision"] == "REBALANCE"
     assert decisions[0]["payload"]["network"] == "base_sepolia"
+    assert decisions[0]["payload"]["in_range"] is False
+    assert decisions[0]["payload"]["proposed_lower_tick"] == 219100
+    assert decisions[0]["payload"]["proposed_upper_tick"] == 219300
