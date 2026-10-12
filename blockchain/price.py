@@ -1,5 +1,5 @@
 
-from decimal import Decimal, getcontext
+from decimal import Decimal, ROUND_FLOOR, getcontext
 
 getcontext().prec = 50
 
@@ -135,7 +135,7 @@ def tick_from_price(
         ctx.prec = 50
         tick = raw_price.ln() / Decimal("1.0001").ln()
 
-    return int(tick)
+    return int(tick.to_integral_value(rounding=ROUND_FLOOR))
 
 def price_range_ticks(
     current_price: Decimal,
