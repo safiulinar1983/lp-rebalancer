@@ -28,13 +28,10 @@ def price_token1_in_token0(
     # token1/token0 in raw atomic units
     raw_price = sqrt_price ** 2
 
-    # Convert to human-readable token1/token0
-    token1_per_token0 = raw_price * (
-        Decimal(10) ** (token0_decimals - token1_decimals)
+    # Convert raw token1/token0 ratio to human-readable token0/token1.
+    return (Decimal(1) / raw_price) * (
+        Decimal(10) ** (token1_decimals - token0_decimals)
     )
-
-    # We need token0 per token1
-    return Decimal(1) / token1_per_token0
 
 def align_tick(tick: int, tick_spacing: int, round_up: bool = False) -> int:
     """

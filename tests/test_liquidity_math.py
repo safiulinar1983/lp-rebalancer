@@ -320,3 +320,50 @@ def test_amounts_per_liquidity_exact_boundaries_and_formula():
 
     assert lower.amount1 == 0
     assert upper.amount0 == 0
+
+
+def test_usdc_weth_raw_amounts_use_six_and_eighteen_decimals():
+    from blockchain.price import price_token1_in_token0
+
+    # Synthetic pool price: 2000 USDC per WETH.
+    token0_decimals = 6
+    token1_decimals = 18
+    sqrt_price_x96 = int(
+        Q96
+        * (
+            Decimal(10) ** (token1_decimals - token0_decimals)
+            / Decimal("2000")
+        ).sqrt()
+    )
+
+    human_price = price_token1_in_token0(
+        sqrt_price_x96,
+        token0_decimals,
+        token1_decimals,
+    )
+
+    assert abs(human_price - Decimal("2000")) < Decimal("0.000001")
+
+    sqrt_price = Decimal(sqrt_price_x96) / Q96
+    amounts = amounts_per_liquidity(
+        sqrt_price,
+        lower_tick=190000, upper_tick=210000,
+    )
+
+    assert amounts.amount0 >= 0
+    assert amounts.amount1 >= 0
+    assert amounts.amount0 > 0 or amounts.amount1 > 0
+
+
+def test_usdc_weth_liquidity_amounts_are_raw_units():
+    # Raw V3 sqrt price and ticks determine raw token amounts.
+    sqrt_price = sqrt_ratio_at_tick(-195000)
+
+    amounts = amounts_per_liquidity(
+        sqrt_price,
+        lower_tick=-200000,
+        upper_tick=-190000,
+    )
+
+    assert amounts.amount0 > 0
+    assert amounts.amount1 > 0
