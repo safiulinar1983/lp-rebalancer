@@ -115,8 +115,8 @@ def estimate_swap_to_balance(
     ) / (Decimal(1) + ratio * price1_per_0)
 
     if swap0 > 0:
-        if swap0 >= balance0:
-            swap0 = Decimal(balance0)
+        if swap0 > Decimal(balance0):
+            raise ValueError("Calculated token0 swap exceeds available balance")
         return SwapEstimate(
             token_in=0,
             amount_in=swap0,
@@ -131,8 +131,8 @@ def estimate_swap_to_balance(
     if swap1 <= 0:
         return None
 
-    if swap1 >= balance1:
-        swap1 = Decimal(balance1)
+    if swap1 > Decimal(balance1):
+        raise ValueError("Calculated token1 swap exceeds available balance")
 
     return SwapEstimate(
         token_in=1,

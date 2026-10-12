@@ -138,3 +138,111 @@ def test_no_swap_when_balances_match_required_ratio():
 
 def test_sqrt_ratio_at_tick_zero_is_one():
     assert sqrt_ratio_at_tick(0) == Decimal("1")
+
+
+def test_swap_from_token0_produces_required_token_ratio():
+    balance0 = 1_000_000
+    balance1 = 1
+    sqrt_price_x96 = int(Q96)
+    lower_tick = -100
+    upper_tick = 100
+
+    estimate = estimate_swap_to_balance(
+        balance0, balance1, sqrt_price_x96, lower_tick, upper_tick
+    )
+    assert estimate is not None
+    assert estimate.token_in == 0
+
+    amounts = amounts_per_liquidity(
+        Decimal(sqrt_price_x96) / Q96, lower_tick, upper_tick
+    )
+    target_ratio = amounts.amount0 / amounts.amount1
+    remaining0 = Decimal(balance0) - estimate.amount_in
+    remaining1 = Decimal(balance1) + estimate.expected_amount_out
+    actual_ratio = remaining0 / remaining1
+
+    assert abs(actual_ratio - target_ratio) / target_ratio < Decimal("1e-10")
+
+
+def test_swap_from_token1_produces_required_token_ratio():
+    balance0 = 1
+    balance1 = 1_000_000
+    sqrt_price_x96 = int(Q96)
+    lower_tick = -100
+    upper_tick = 100
+
+    estimate = estimate_swap_to_balance(
+        balance0, balance1, sqrt_price_x96, lower_tick, upper_tick
+    )
+    assert estimate is not None
+    assert estimate.token_in == 1
+
+    amounts = amounts_per_liquidity(
+        Decimal(sqrt_price_x96) / Q96, lower_tick, upper_tick
+    )
+    target_ratio = amounts.amount0 / amounts.amount1
+    remaining0 = Decimal(balance0) + estimate.expected_amount_out
+    remaining1 = Decimal(balance1) - estimate.amount_in
+    actual_ratio = remaining0 / remaining1
+
+    assert abs(actual_ratio - target_ratio) / target_ratio < Decimal("1e-10")
+
+
+def test_above_range_swaps_all_token0_when_only_token1_is_required():
+    price = int(sqrt_ratio_at_tick(200) * Q96)
+
+    estimate = estimate_swap_to_balance(
+        balance0=1000,
+        balance1=500,
+        sqrt_price_x96=price,
+        lower_tick=-100,
+        upper_tick=100,
+    )
+
+    assert estimate is not None
+    assert estimate.token_in == 0
+    assert estimate.amount_in == Decimal(1000)
+
+
+def test_above_range_needs_no_swap_when_token0_balance_is_zero():
+    price = int(sqrt_ratio_at_tick(200) * Q96)
+
+    estimate = estimate_swap_to_balance(
+        balance0=0,
+        balance1=500,
+        sqrt_price_x96=price,
+        lower_tick=-100,
+        upper_tick=100,
+    )
+
+    assert estimate is None
+
+
+def test_below_range_swaps_all_token1_when_only_token0_is_required():
+    price = int(sqrt_ratio_at_tick(-200) * Q96)
+
+    estimate = estimate_swap_to_balance(
+        balance0=500,
+        balance1=1000,
+        sqrt_price_x96=price,
+        lower_tick=-100,
+        upper_tick=100,
+    )
+
+    assert estimate is not None
+    assert estimate.token_in == 1
+    assert estimate.amount_in == Decimal(1000)
+
+
+def test_below_range_needs_no_swap_when_token1_balance_is_zero():
+    price = int(sqrt_ratio_at_tick(-200) * Q96)
+
+    estimate = estimate_swap_to_balance(
+        balance0=500,
+        balance1=0,
+        sqrt_price_x96=price,
+        lower_tick=-100,
+        upper_tick=100,
+    )
+
+    assert estimate is None

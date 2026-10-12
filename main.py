@@ -40,7 +40,7 @@ def main() -> int:
             return 2
 
         logging.info("status=CONNECTED")
-        logger.info(f"network={config.network}")
+        logging.info("network=%s", config.network)
         logging.info("rpc=%s", rpc.safe_url())
         return 0
 
