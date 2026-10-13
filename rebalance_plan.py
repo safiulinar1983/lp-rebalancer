@@ -95,21 +95,37 @@ class RebalancePlan:
             if self.swap_token_in.lower() == self.swap_token_out.lower():
                 raise ValueError("Swap input and output tokens must differ")
 
+        # Validate numeric values before comparing them.
         if self.quoted_amount_out_raw is not None:
-            if self.quoted_amount_out_raw < 0:
-                raise ValueError("Quoted output cannot be negative")
+            if self.quoted_amount_out_raw <= 0:
+                raise ValueError("Quoted output must be positive")
 
         if self.min_amount_out_raw is not None:
-            if self.min_amount_out_raw < 0:
-                raise ValueError("Minimum output cannot be negative")
+            if self.min_amount_out_raw <= 0:
+                raise ValueError("Minimum output must be positive")
 
+        # A swap requires both a quote and a slippage limit.
+        if self.swap_required:
             if self.quoted_amount_out_raw is None:
-                raise ValueError("Minimum output requires a quote")
+                raise ValueError("Swap requires a quoted output")
+            if self.min_amount_out_raw is None:
+                raise ValueError("Swap requires a minimum output")
 
-            if self.min_amount_out_raw > self.quoted_amount_out_raw:
-                raise ValueError(
-                    "Minimum output cannot exceed quoted output"
-                )
+        # A minimum output without a quote is invalid even without a swap.
+        if (
+            self.min_amount_out_raw is not None
+            and self.quoted_amount_out_raw is None
+        ):
+            raise ValueError("Minimum output requires a quote")
+
+        if (
+            self.min_amount_out_raw is not None
+            and self.quoted_amount_out_raw is not None
+            and self.min_amount_out_raw > self.quoted_amount_out_raw
+        ):
+            raise ValueError(
+                "Minimum output cannot exceed quoted output"
+            )
 
         if self.estimated_gas_cost_usd is not None:
             if self.estimated_gas_cost_usd < 0:
