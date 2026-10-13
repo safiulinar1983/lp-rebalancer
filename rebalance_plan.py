@@ -34,6 +34,7 @@ class RebalancePlan:
     max_gas_cost_usd: float | None = None
 
     blocked_reason: str | None = None
+    planned_liquidity: int | None = None
 
     @property
     def requires_rebalance(self) -> bool:
@@ -215,3 +216,12 @@ class RebalancePlan:
         if self.max_gas_cost_usd is not None:
             if self.max_gas_cost_usd < 0:
                 raise ValueError("Maximum gas cost cannot be negative")
+
+        if self.planned_liquidity is not None:
+            if (
+                isinstance(self.planned_liquidity, bool)
+                or not isinstance(self.planned_liquidity, int)
+            ):
+                raise ValueError("Planned liquidity must be an integer")
+            if self.planned_liquidity < 0:
+                raise ValueError("Planned liquidity cannot be negative")

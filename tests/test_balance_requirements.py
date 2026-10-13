@@ -5,6 +5,7 @@ import pytest
 from blockchain.balance_requirements import (
     TokenBalances,
     check_sufficient_balances,
+    max_liquidity_for_balances,
     required_token_amounts,
 )
 from blockchain.liquidity_math import Q96, amounts_per_liquidity
@@ -98,3 +99,83 @@ def test_invalid_balances_raise(balances):
 def test_wrong_balance_argument_type_raises():
     with pytest.raises(TypeError):
         check_sufficient_balances((100, 100), TokenBalances(50, 50))
+
+
+def test_max_liquidity_for_balances_funds_requirements():
+    from blockchain.balance_requirements import max_liquidity_for_balances
+
+    available = TokenBalances(100_000_000, 100_000_000)
+    liquidity = max_liquidity_for_balances(
+        int(Q96), -100, 100, available
+    )
+
+    assert liquidity > 0
+    required = required_token_amounts(
+        int(Q96), -100, 100, liquidity
+    )
+    assert required.token0_raw <= available.token0_raw
+    assert required.token1_raw <= available.token1_raw
+
+
+def test_max_liquidity_outside_range_needs_only_one_token():
+    from blockchain.balance_requirements import max_liquidity_for_balances
+
+    liquidity = max_liquidity_for_balances(
+        int(Q96), 100, 200, TokenBalances(1_000_000, 0)
+    )
+
+    assert liquidity > 0
+
+
+def test_max_liquidity_returns_zero_without_required_token():
+    from blockchain.balance_requirements import max_liquidity_for_balances
+
+    liquidity = max_liquidity_for_balances(
+        int(Q96), 100, 200, TokenBalances(0, 1_000_000)
+    )
+
+    assert liquidity == 0
+
+
+def test_max_liquidity_rejects_invalid_price():
+    from blockchain.balance_requirements import max_liquidity_for_balances
+
+    with pytest.raises(ValueError):
+        max_liquidity_for_balances(
+            0, -100, 100, TokenBalances(100, 100)
+        )
+
+
+def test_max_liquidity_rejects_wrong_balance_type():
+    from blockchain.balance_requirements import max_liquidity_for_balances
+
+    with pytest.raises(TypeError):
+        max_liquidity_for_balances(
+            int(Q96), -100, 100, (100, 100)
+        )
+
+def test_max_liquidity_is_maximal_with_rounding():
+    from blockchain.balance_requirements import max_liquidity_for_balances
+
+    available = TokenBalances(100_000_000, 100_000_000)
+    price = int(Q96)
+    lower_tick, upper_tick = -100, 100
+
+    liquidity = max_liquidity_for_balances(
+        price, lower_tick, upper_tick, available
+    )
+    assert liquidity > 0
+
+    required = required_token_amounts(
+        price, lower_tick, upper_tick, liquidity
+    )
+    assert required.token0_raw <= available.token0_raw
+    assert required.token1_raw <= available.token1_raw
+
+    next_required = required_token_amounts(
+        price, lower_tick, upper_tick, liquidity + 1
+    )
+    assert (
+        next_required.token0_raw > available.token0_raw
+        or next_required.token1_raw > available.token1_raw
+    )

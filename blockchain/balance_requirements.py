@@ -67,6 +67,46 @@ def required_token_amounts(
     return TokenBalances(int(amount0), int(amount1))
 
 
+def max_liquidity_for_balances(
+    sqrt_price_x96: int,
+    lower_tick: int,
+    upper_tick: int,
+    available: TokenBalances,
+) -> int:
+    """Return the maximum integer liquidity affordable with available balances.
+
+    Amounts are calculated in raw token units. The result is a local
+    mathematical estimate, not a guarantee that an on-chain mint will succeed.
+    Returns zero when the available balances cannot fund positive liquidity.
+    """
+    if isinstance(sqrt_price_x96, bool) or not isinstance(sqrt_price_x96, int):
+        raise ValueError("sqrt_price_x96 must be an integer")
+    if sqrt_price_x96 <= 0:
+        raise ValueError("sqrt_price_x96 must be positive")
+    if not isinstance(available, TokenBalances):
+        raise TypeError("available must be TokenBalances")
+
+    sqrt_price = Decimal(sqrt_price_x96) / Q96
+    per_liquidity = amounts_per_liquidity(
+        sqrt_price, lower_tick, upper_tick
+    )
+
+    limits = []
+    if per_liquidity.amount0 > 0:
+        limits.append(
+            Decimal(available.token0_raw) / per_liquidity.amount0
+        )
+    if per_liquidity.amount1 > 0:
+        limits.append(
+            Decimal(available.token1_raw) / per_liquidity.amount1
+        )
+
+    if not limits:
+        raise ValueError("Invalid target token amounts")
+
+    return max(0, int(min(limits)))
+
+
 def check_sufficient_balances(
     available: TokenBalances,
     required: TokenBalances,
