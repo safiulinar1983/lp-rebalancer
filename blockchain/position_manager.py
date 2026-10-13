@@ -23,6 +23,13 @@ POSITION_MANAGER_ABI = [
     },
     {
         "inputs": [{"name": "tokenId", "type": "uint256"}],
+        "name": "ownerOf",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [{"name": "tokenId", "type": "uint256"}],
         "name": "positions",
         "outputs": [
             {"name": "nonce", "type": "uint96"},
@@ -133,23 +140,58 @@ class PositionManager:
         token0: str,
         token1: str,
         fee: int,
+        token_id: int | None = None,
     ) -> Position:
         token0 = self.w3.to_checksum_address(token0)
         token1 = self.w3.to_checksum_address(token1)
 
-        for token_id in self.get_token_ids():
+        if token_id is not None:
+            if isinstance(token_id, bool) or not isinstance(token_id, int):
+                raise ValueError("token_id must be a positive integer")
+            if token_id <= 0:
+                raise ValueError("token_id must be a positive integer")
+
+            owner = self.contract.functions.ownerOf(token_id).call()
+            owner = self.w3.to_checksum_address(owner)
+
+            if owner != self.wallet:
+                raise RuntimeError(
+                    f"LP NFT #{token_id} is owned by {owner}, "
+                    f"not configured wallet {self.wallet}"
+                )
+
             position = self.read_position(token_id)
+            actual_token0 = self.w3.to_checksum_address(position.token0)
+            actual_token1 = self.w3.to_checksum_address(position.token1)
 
             if (
-                position.token0 == token0
-                and position.token1 == token1
+                actual_token0 != token0
+                or actual_token1 != token1
+                or position.fee != fee
+            ):
+                raise RuntimeError(
+                    f"LP NFT #{token_id} does not match the configured pool: "
+                    f"expected {token0}/{token1} fee={fee}, "
+                    f"got {actual_token0}/{actual_token1} "
+                    f"fee={position.fee}"
+                )
+
+            return position
+
+        for candidate_id in self.get_token_ids():
+            position = self.read_position(candidate_id)
+            actual_token0 = self.w3.to_checksum_address(position.token0)
+            actual_token1 = self.w3.to_checksum_address(position.token1)
+
+            if (
+                actual_token0 == token0
+                and actual_token1 == token1
                 and position.fee == fee
             ):
                 return position
 
         raise RuntimeError(
-            f"No LP position found for "
-            f"{token0}/{token1} fee={fee}"
+            f"No LP position found for {token0}/{token1} fee={fee}"
         )
 
     def simulate_decrease_liquidity(

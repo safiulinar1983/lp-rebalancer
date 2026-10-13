@@ -74,7 +74,8 @@ def main() -> None:
         token0=pool_state.token0,
         token1=pool_state.token1,
         fee=pool_state.fee,
-    )
+        token_id=config.position_token_id,
+)
 
     token_id = position.token_id
 
