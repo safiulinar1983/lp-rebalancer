@@ -1,59 +1,39 @@
-# LP Rebalancer
+# LP Rebalancer v0.3
 
-Local cross-platform agent for one PancakeSwap V3 concentrated-liquidity
-position on Base.
+Локальный Python-проект для мониторинга и планирования управления позицией
+концентрированной ликвидности PancakeSwap V3 в сети Base.
 
-## Current stage
+## Реализовано
 
-Stage 1 only:
+- Подключение к RPC и проверка сети.
+- Чтение состояния пула и выбранной LP NFT-позиции, включая проверку владельца,
+  токенов пула и комиссии.
+- Однократный мониторинг текущего тика, диапазона, ликвидности и начисленных комиссий.
+- Сохранение снимков состояния и решений мониторинга в SQLite.
+- Математические расчёты ликвидности и оценка баланса токенов для обмена.
+- Расчёт потребности в `token0` и `token1` и проверка достаточности балансов.
+- Валидация `RebalancePlan`, включая котировку обмена, минимальный выход
+  с учётом проскальзывания и ограничение стоимости газа.
 
-- connect to Base Mainnet RPC;
-- read chain ID;
-- read latest block number;
-- fail closed if the connected chain is not Base Mainnet.
+## Конфигурация
 
-No wallet, private key, transaction, pool or LP-position logic exists yet.
+Основные параметры задаются в `config.yaml`, включая сеть, RPC, пул,
+Position Manager, выбранный `token_id` и ширину ценового диапазона.
 
-## Requirements
+Base Sepolia используется для разработки и тестирования.
 
-- Python 3.11+ recommended
-- macOS / Windows / Linux
+## Ограничения текущей версии
 
-## macOS / Linux
+- `monitor_position.py` выполняет один проход, а не работает непрерывно.
+- Оценка обмена по спотовой цене не является гарантированной исполнимой котировкой.
+- Расчётные компоненты пока не объединены в полный автоматический цикл
+  закрытия позиции, сбора комиссий, обмена и открытия новой позиции.
+- Полный цикл автоматической отправки транзакций не реализован.
 
-```bash
-cd lp-rebalancer
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-python main.py
-```
+## Тесты
 
-## Windows PowerShell
+Последний полный запуск: **195 passed**.
 
-```powershell
-cd lp-rebalancer
-py -3 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-Copy-Item .env.example .env
-python main.py
-```
+## Безопасность
 
-## Tests
-
-```bash
-pytest -q
-```
-
-Expected result:
-
-```text
-2 passed
-```
-
-## Security
-
-Never commit `.env`, private keys, seed phrases or wallet secrets.
-The Stage 1 code does not require a private key.
+Не храните в Git приватные ключи, seed-фразы и другие секреты.
