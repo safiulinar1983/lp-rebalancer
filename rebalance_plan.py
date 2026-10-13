@@ -24,6 +24,12 @@ class RebalancePlan:
     quoted_amount_out_raw: int | None = None
     min_amount_out_raw: int | None = None
 
+    # Calculated requirements and projected balances, all in raw token units.
+    required_token0_raw: int | None = None
+    required_token1_raw: int | None = None
+    available_token0_after_swap_raw: int | None = None
+    available_token1_after_swap_raw: int | None = None
+
     estimated_gas_cost_usd: float | None = None
     max_gas_cost_usd: float | None = None
 
@@ -45,6 +51,50 @@ class RebalancePlan:
         )
 
     @property
+    def balance_check_reason(self) -> str | None:
+        """Explain why calculated token requirements cannot be satisfied."""
+        required0 = self.required_token0_raw
+        required1 = self.required_token1_raw
+
+        if required0 is None and required1 is None:
+            return None
+        if required0 is None or required1 is None:
+            return "Required token amounts must be provided together"
+
+        projected0 = self.available_token0_after_swap_raw
+        projected1 = self.available_token1_after_swap_raw
+
+        if self.swap_required and (projected0 is None or projected1 is None):
+            return (
+                "Post-swap balances are required to check "
+                "liquidity requirements"
+            )
+
+        if projected0 is None:
+            available0 = self.token0_balance_raw
+        else:
+            available0 = projected0
+
+        if projected1 is None:
+            available1 = self.token1_balance_raw
+        else:
+            available1 = projected1
+
+        deficits = []
+        if available0 < required0:
+            deficits.append(
+                f"Insufficient token0 balance: need {required0}, "
+                f"available {available0} raw units"
+            )
+        if available1 < required1:
+            deficits.append(
+                f"Insufficient token1 balance: need {required1}, "
+                f"available {available1} raw units"
+            )
+
+        return "; ".join(deficits) if deficits else None
+
+    @property
     def is_blocked(self) -> bool:
         """Whether execution must be prevented."""
         if self.blocked_reason:
@@ -55,6 +105,9 @@ class RebalancePlan:
                 return True
             if self.estimated_gas_cost_usd > self.max_gas_cost_usd:
                 return True
+
+        if self.balance_check_reason is not None:
+            return True
 
         return False
 
@@ -126,6 +179,34 @@ class RebalancePlan:
             raise ValueError(
                 "Minimum output cannot exceed quoted output"
             )
+
+        # Validate calculated token requirements and projected balances.
+        requirement_fields = (
+            self.required_token0_raw,
+            self.required_token1_raw,
+        )
+        if any(value is not None for value in requirement_fields):
+            if any(value is None for value in requirement_fields):
+                raise ValueError(
+                    "Required token amounts must be provided together"
+                )
+            if self.required_token0_raw < 0 or self.required_token1_raw < 0:
+                raise ValueError("Required token amounts cannot be negative")
+
+        projected_fields = (
+            self.available_token0_after_swap_raw,
+            self.available_token1_after_swap_raw,
+        )
+        if any(value is not None for value in projected_fields):
+            if any(value is None for value in projected_fields):
+                raise ValueError(
+                    "Post-swap balances must be provided together"
+                )
+            if (
+                self.available_token0_after_swap_raw < 0
+                or self.available_token1_after_swap_raw < 0
+            ):
+                raise ValueError("Post-swap balances cannot be negative")
 
         if self.estimated_gas_cost_usd is not None:
             if self.estimated_gas_cost_usd < 0:
