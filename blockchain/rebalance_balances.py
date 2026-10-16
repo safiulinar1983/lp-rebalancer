@@ -4,7 +4,13 @@ This module does not read the blockchain or submit transactions.
 All amounts are integer raw token units.
 """
 
-from dataclasses import dataclass
+from blockchain.token_balances import TokenBalances
+
+__all__ = [
+    "TokenBalances",
+    "balances_after_close",
+    "balances_after_swap",
+]
 
 
 def _validate_amount(value: int, name: str) -> None:
@@ -18,18 +24,6 @@ def _validate_positive_amount(value: int, name: str) -> None:
     _validate_amount(value, name)
     if value == 0:
         raise ValueError(f"{name} must be positive")
-
-
-@dataclass(frozen=True)
-class TokenBalances:
-    """Available token balances in raw units."""
-
-    token0_raw: int
-    token1_raw: int
-
-    def __post_init__(self) -> None:
-        _validate_amount(self.token0_raw, "token0_raw")
-        _validate_amount(self.token1_raw, "token1_raw")
 
 
 def balances_after_close(

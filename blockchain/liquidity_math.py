@@ -1,10 +1,14 @@
+"""Local V3 liquidity and swap-size estimates.
+
+These helpers are pure calculations: no RPC calls, no transactions.
+``Q96`` and ``TICK_BASE`` are re-exported from ``blockchain.precision`` for
+backwards compatibility with existing imports.
+"""
+
 from dataclasses import dataclass
-from decimal import Decimal, getcontext
+from decimal import Decimal
 
-getcontext().prec = 60
-
-Q96 = Decimal(2**96)
-TICK_BASE = Decimal("1.0001")
+from blockchain.precision import Q96, TICK_BASE
 
 
 @dataclass(frozen=True)

@@ -130,7 +130,7 @@ def test_rebalance_has_priority_over_fee_collection(
     assert decision.in_range is False
 
 
-def test_strategy_rejects_non_positive_range_width():
+def test_strategy_rejects_non_positive_range_half_width():
     with pytest.raises(ValueError, match="range_half_width"):
         Strategy(range_half_width=Decimal("0"))
 

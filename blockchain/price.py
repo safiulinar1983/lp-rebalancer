@@ -1,10 +1,12 @@
+"""V3 price and tick conversions.
 
-from decimal import Decimal, ROUND_FLOOR, getcontext
+Prices are expressed as token0 per 1 token1. All calculations are local and use
+``Decimal``; nothing in this module touches the network.
+"""
 
-getcontext().prec = 50
+from decimal import ROUND_FLOOR, Decimal, localcontext
 
-
-Q96 = Decimal(2**96)
+from blockchain.precision import LOG_PRECISION, Q96, TICK_BASE
 
 
 def price_token1_in_token0(
@@ -33,6 +35,7 @@ def price_token1_in_token0(
         Decimal(10) ** (token1_decimals - token0_decimals)
     )
 
+
 def align_tick(tick: int, tick_spacing: int, round_up: bool = False) -> int:
     """
     Align a tick to the nearest valid tick for a PancakeSwap V3 pool.
@@ -59,6 +62,7 @@ def align_tick(tick: int, tick_spacing: int, round_up: bool = False) -> int:
 
     return quotient * tick_spacing
 
+
 def price_from_tick(
     tick: int,
     token0_decimals: int,
@@ -69,7 +73,7 @@ def price_from_tick(
     for a given V3 tick.
     """
 
-    raw_price = Decimal("1.0001") ** tick
+    raw_price = TICK_BASE ** tick
 
     token1_per_token0 = raw_price * (
         Decimal(10) ** (token0_decimals - token1_decimals)
@@ -77,28 +81,23 @@ def price_from_tick(
 
     return Decimal(1) / token1_per_token0
 
+
 def price_range(
     current_price: Decimal,
-    range_width: Decimal,
+    half_width: Decimal,
 ) -> tuple[Decimal, Decimal]:
     """
     Returns lower and upper prices around the current price.
 
-    Example:
-        current_price = 100
-        range_width = 0.01
-
-        result:
-            99.00, 101.00
+    ``half_width`` is a relative half-width, not a full range width:
+    ``half_width=0.01`` around ``current_price=100`` gives (99.00, 101.00).
     """
 
     if current_price <= 0:
         raise ValueError("current_price must be positive")
 
-    if range_width <= 0:
-        raise ValueError("range_width must be positive")
-
-    half_width = range_width
+    if half_width <= 0:
+        raise ValueError("half_width must be positive")
 
     lower = current_price * (Decimal(1) - half_width)
     upper = current_price * (Decimal(1) + half_width)
@@ -129,14 +128,14 @@ def tick_from_price(
     from decimal import localcontext
 
     with localcontext() as ctx:
-        ctx.prec = 50
-        tick = raw_price.ln() / Decimal("1.0001").ln()
+        ctx.prec = LOG_PRECISION
+        tick = raw_price.ln() / TICK_BASE.ln()
 
     return int(tick.to_integral_value(rounding=ROUND_FLOOR))
 
 def price_range_ticks(
     current_price: Decimal,
-    range_width: Decimal,
+    range_half_width: Decimal,
     tick_spacing: int,
     token0_decimals: int,
     token1_decimals: int,
@@ -144,7 +143,8 @@ def price_range_ticks(
     """
     Returns valid V3 lower and upper ticks for a price range.
 
-    Price is expressed as token0 per 1 token1.
+    ``current_price`` is expressed as token0 per 1 token1.
+    ``range_half_width`` is a relative half-width, for example 0.01 for +-1%.
 
     For example:
         token0 = USDC
@@ -156,7 +156,7 @@ def price_range_ticks(
 
     lower_price, upper_price = price_range(
         current_price,
-        range_width,
+        range_half_width,
     )
 
     lower_price_tick = tick_from_price(
@@ -189,6 +189,7 @@ def price_range_ticks(
         raise ValueError("Invalid tick range")
 
     return lower_tick, upper_tick
+
 
 def is_tick_in_range(
     tick: int,

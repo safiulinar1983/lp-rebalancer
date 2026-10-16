@@ -3,11 +3,13 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from storage.interfaces import EventStore, LearningStore, WrongCaseStore
+class SQLiteStore:
+    """Local SQLite storage for events, decisions, failures and learning data.
 
-
-class SQLiteStore(EventStore, WrongCaseStore, LearningStore):
-    """Local SQLite storage for events, decisions, failures and learning data."""
+    The class structurally satisfies ``storage.interfaces.EventStore``,
+    ``WrongCaseStore`` and ``LearningStore``. It deliberately does not inherit
+    from those protocols: they are typing contracts, not behaviour.
+    """
 
     SCHEMA_VERSION = 1
     WRONG_STATUSES = {"new", "investigating", "replayed", "resolved"}

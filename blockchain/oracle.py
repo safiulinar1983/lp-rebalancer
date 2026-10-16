@@ -3,29 +3,7 @@ from decimal import Decimal
 
 from web3 import Web3
 
-
-CHAINLINK_ABI = [
-    {
-        "name": "decimals",
-        "type": "function",
-        "stateMutability": "view",
-        "inputs": [],
-        "outputs": [{"name": "", "type": "uint8"}],
-    },
-    {
-        "name": "latestRoundData",
-        "type": "function",
-        "stateMutability": "view",
-        "inputs": [],
-        "outputs": [
-            {"name": "roundId", "type": "uint80"},
-            {"name": "answer", "type": "int256"},
-            {"name": "startedAt", "type": "uint256"},
-            {"name": "updatedAt", "type": "uint256"},
-            {"name": "answeredInRound", "type": "uint80"},
-        ],
-    },
-]
+from blockchain.abis import CHAINLINK_ABI
 
 
 def get_token_price_usd(
@@ -33,6 +11,11 @@ def get_token_price_usd(
     feed_address: str,
     max_age_seconds: int = 3600,
 ) -> Decimal:
+    """Return the latest Chainlink answer converted to a human-readable USD price.
+
+    Raises ``ValueError`` when the feed address is invalid, the answer is not
+    positive, or the round is stale compared with ``max_age_seconds``.
+    """
     if max_age_seconds <= 0:
         raise ValueError("max_age_seconds must be positive")
 

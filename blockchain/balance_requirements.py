@@ -1,24 +1,22 @@
+"""Balance requirements for opening a new V3 position.
+
+``TokenBalances`` is re-exported from ``blockchain.token_balances`` so that a
+single definition is shared by every module that deals with wallet assets.
+"""
+
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_CEILING
+from decimal import ROUND_CEILING, Decimal
 
 from blockchain.liquidity_math import Q96, amounts_per_liquidity
+from blockchain.token_balances import TokenBalances
 
-
-@dataclass(frozen=True)
-class TokenBalances:
-    """Token balances in raw units, such as USDC micro-units and WETH wei."""
-    token0_raw: int
-    token1_raw: int
-
-    def __post_init__(self):
-        for name, value in (
-            ("token0_raw", self.token0_raw),
-            ("token1_raw", self.token1_raw),
-        ):
-            if isinstance(value, bool) or not isinstance(value, int):
-                raise ValueError(f"{name} must be an integer")
-            if value < 0:
-                raise ValueError(f"{name} cannot be negative")
+__all__ = [
+    "BalanceCheck",
+    "TokenBalances",
+    "check_sufficient_balances",
+    "max_liquidity_for_balances",
+    "required_token_amounts",
+]
 
 
 @dataclass(frozen=True)

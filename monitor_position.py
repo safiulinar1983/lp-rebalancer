@@ -1,30 +1,74 @@
+"""Read-only monitor: classify the configured LP position and report it.
+
+The monitor never signs or sends transactions. It stores a snapshot in the
+local SQLite store and prints a human-readable report (CLI output is
+intentionally print-based; ``main.py`` uses ``logging``).
+"""
+
 from decimal import Decimal
 
 from web3 import Web3
 
-from config import load_config
+from config import AppConfig, load_config
 from blockchain.dex_manager import DEXManager
 from blockchain.position_manager import PositionManager
 from blockchain.fees import calculate_fees_value_usd
 from blockchain.oracle import get_token_price_usd
+from blockchain.rpc import connect
 from strategy import Strategy
 from storage.sqlite_store import SQLiteStore
+
+# Pools whose quote token is a USD stablecoin are valued at exactly one dollar.
+STABLECOIN_PRICE_USD = Decimal("1")
+
+
+def _oracle_price(w3: Web3, feed_address: str, max_age_seconds: int) -> Decimal:
+    """Read a Chainlink feed, turning RPC failures into a clear error."""
+    try:
+        return get_token_price_usd(w3, feed_address, max_age_seconds)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Price unavailable for feed {feed_address}; stopping monitor: {exc}"
+        ) from exc
+
+
+def resolve_token_prices(w3: Web3, config: AppConfig) -> tuple[Decimal, Decimal]:
+    """Return ``(token0_usd, token1_usd)`` for the configured pool.
+
+    An empty ``oracle.token0_usd_feed`` means token0 is a USD stablecoin and is
+    valued at $1. An empty ``oracle.token1_usd_feed`` is an error: the pool spot
+    price is a token0/token1 ratio, not a USD price, so it must not silently
+    replace a missing feed.
+    """
+    if config.token0_usd_feed:
+        token0_price_usd = _oracle_price(
+            w3,
+            config.token0_usd_feed,
+            config.oracle_max_age_seconds,
+        )
+    else:
+        token0_price_usd = STABLECOIN_PRICE_USD
+
+    if not config.token1_usd_feed:
+        raise RuntimeError(
+            "oracle.token1_usd_feed is required: "
+            "a pool spot price is not a USD price"
+        )
+
+    token1_price_usd = _oracle_price(
+        w3,
+        config.token1_usd_feed,
+        config.oracle_max_age_seconds,
+    )
+
+    return token0_price_usd, token1_price_usd
 
 
 def main() -> None:
     config = load_config()
     store = SQLiteStore()
 
-    w3 = Web3(Web3.HTTPProvider(config.rpc_url))
-
-    if not w3.is_connected():
-        raise RuntimeError("Cannot connect to RPC")
-
-    if w3.eth.chain_id != config.expected_chain_id:
-        raise RuntimeError(
-            f"Wrong network: expected {config.expected_chain_id}, "
-            f"got {w3.eth.chain_id}"
-        )
+    w3 = connect(config.rpc_url, expected_chain_id=config.expected_chain_id)
 
     pool = DEXManager.create_pool(
         dex_name=config.dex,
@@ -40,35 +84,11 @@ def main() -> None:
 
     strategy = Strategy(
         range_half_width=config.range_half_width,
-        fee_threshold_usd=Decimal(str(config.fee_threshold_usd)),
+        fee_threshold_usd=config.fee_threshold_usd,
     )
 
     pool_state = pool.read_state()
-
-    # Use configured Chainlink feeds independently.
-    # For this test pool, an unconfigured token0 (USDC) is assumed to be $1.
-    token0_feed = config.token0_usd_feed
-    token1_feed = config.token1_usd_feed
-
-    try:
-        token0_price_usd = (
-            get_token_price_usd(
-                w3, token0_feed, config.oracle_max_age_seconds
-            )
-            if token0_feed
-            else Decimal("1")
-        )
-        token1_price_usd = (
-            get_token_price_usd(
-                w3, token1_feed, config.oracle_max_age_seconds
-            )
-            if token1_feed
-            else Decimal(str(pool_state.price))
-        )
-    except Exception as exc:
-        raise RuntimeError(
-            f"Price unavailable; stopping monitor: {exc}"
-        ) from exc
+    token0_price_usd, token1_price_usd = resolve_token_prices(w3, config)
 
     position = position_manager.find_position(
         token0=pool_state.token0,
