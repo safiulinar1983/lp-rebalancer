@@ -73,6 +73,13 @@ ERC20_ABI = [
         "type": "function",
     },
     {
+        "inputs": [{"name": "owner", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
         "inputs": [
             {"name": "spender", "type": "address"},
             {"name": "amount", "type": "uint256"},
@@ -246,9 +253,89 @@ POSITION_MANAGER_ABI = [
         "type": "function",
     },
     {
+        "inputs": [
+            {
+                "components": [
+                    {"name": "tokenId", "type": "uint256"},
+                    {"name": "amount0Desired", "type": "uint256"},
+                    {"name": "amount1Desired", "type": "uint256"},
+                    {"name": "amount0Min", "type": "uint256"},
+                    {"name": "amount1Min", "type": "uint256"},
+                    {"name": "deadline", "type": "uint256"},
+                ],
+                "name": "params",
+                "type": "tuple",
+            }
+        ],
+        "name": "increaseLiquidity",
+        "outputs": [
+            {"name": "liquidity", "type": "uint128"},
+            {"name": "amount0", "type": "uint256"},
+            {"name": "amount1", "type": "uint256"},
+        ],
+        "stateMutability": "payable",
+        "type": "function",
+    },
+    {
+        "inputs": [{"name": "tokenId", "type": "uint256"}],
+        "name": "burn",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function",
+    },
+    {
         "inputs": [{"name": "data", "type": "bytes[]"}],
         "name": "multicall",
         "outputs": [{"name": "results", "type": "bytes[]"}],
+        "stateMutability": "payable",
+        "type": "function",
+    },
+]
+
+# PancakeSwap V3 QuoterV2: quoting happens through ``eth_call`` because the
+# function is not a view function on chain.
+QUOTER_V2_ABI = [
+    {
+        "inputs": [
+            {
+                "components": [
+                    {"name": "tokenIn", "type": "address"},
+                    {"name": "tokenOut", "type": "address"},
+                    {"name": "amountIn", "type": "uint256"},
+                    {"name": "fee", "type": "uint24"},
+                    {"name": "sqrtPriceLimitX96", "type": "uint160"},
+                ],
+                "name": "params",
+                "type": "tuple",
+            }
+        ],
+        "name": "quoteExactInputSingle",
+        "outputs": [
+            {"name": "amountOut", "type": "uint256"},
+            {"name": "sqrtPriceX96After", "type": "uint160"},
+            {"name": "initializedTicksCrossed", "type": "uint32"},
+            {"name": "gasEstimate", "type": "uint256"},
+        ],
+        "stateMutability": "nonpayable",
+        "type": "function",
+    },
+]
+
+# PancakeSwap V3 SwapRouter uses the Uniswap V3 SwapRouter02 parameter shape:
+# a single struct without a deadline field.
+SWAP_ROUTER_ABI = [
+    {
+        "inputs": [
+            {"name": "tokenIn", "type": "address"},
+            {"name": "tokenOut", "type": "address"},
+            {"name": "fee", "type": "uint24"},
+            {"name": "recipient", "type": "address"},
+            {"name": "amountIn", "type": "uint256"},
+            {"name": "amountOutMinimum", "type": "uint256"},
+            {"name": "sqrtPriceLimitX96", "type": "uint160"},
+        ],
+        "name": "exactInputSingle",
+        "outputs": [{"name": "amountOut", "type": "uint256"}],
         "stateMutability": "payable",
         "type": "function",
     },

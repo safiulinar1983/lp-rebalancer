@@ -20,6 +20,7 @@ SCRIPTS = [
     "wrap_weth.py",
     "approve_weth.py",
     "mint_position.py",
+    "rebalance.py",
 ]
 
 ARGPARSE_SCRIPTS = [

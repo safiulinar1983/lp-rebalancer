@@ -16,6 +16,14 @@ CONFIG_PATH = Path(__file__).resolve().parent / "config.yaml"
 # Base mainnet and Base Sepolia share this WETH predeploy address.
 DEFAULT_WETH_ADDRESS = "0x4200000000000000000000000000000000000006"
 
+# Rebalance cycle execution modes: DRY_RUN only plans and simulates.
+MODE_DRY_RUN = "DRY_RUN"
+MODE_LIVE = "LIVE"
+MODES = (MODE_DRY_RUN, MODE_LIVE)
+
+# Default slippage tolerance for swaps and liquidity limits: 0.5%.
+DEFAULT_SLIPPAGE_BPS = 50
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -24,6 +32,10 @@ class AppConfig:
     range_half_width: Decimal
     fee_threshold_usd: Decimal
     check_interval: int
+    mode: str
+    slippage_bps: int
+    max_gas_cost_usd: Decimal | None
+    burn_closed_position: bool
     expected_chain_id: int
     network: str
     dex: str
@@ -31,6 +43,8 @@ class AppConfig:
     position_token_id: int | None
     wallet_address: str
     weth_address: str
+    swap_router_address: str
+    quoter_address: str
     token0_usd_feed: str
     token1_usd_feed: str
     oracle_max_age_seconds: int
@@ -66,6 +80,55 @@ def _to_positive_int(value: object, name: str) -> int:
         raise ValueError(f"{name} must be a positive integer")
 
     return result
+
+
+def _to_int_in_range(
+    value: object,
+    name: str,
+    minimum: int,
+    maximum: int,
+) -> int:
+    """Convert a YAML scalar to an integer inside an inclusive range."""
+    message = f"{name} must be an integer from {minimum} to {maximum}"
+
+    if value is None or isinstance(value, bool):
+        raise ValueError(message)
+
+    try:
+        result = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(message) from exc
+
+    if str(result) != str(value).strip():
+        raise ValueError(message)
+
+    if not minimum <= result <= maximum:
+        raise ValueError(message)
+
+    return result
+
+
+def _to_bool(value: object, name: str) -> bool:
+    """Convert a YAML scalar to ``bool`` without accepting truthy strings."""
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} must be true or false")
+
+    return value
+
+
+def _optional_address(value: object, name: str) -> str:
+    """Return an optional 0x-prefixed address; an empty value means unset."""
+    text = str(value or "").strip()
+
+    if not text:
+        return ""
+
+    if not text.startswith("0x") or len(text) != 42:
+        raise ValueError(
+            f"{name} must be a 0x-prefixed 42-character address"
+        )
+
+    return text
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
@@ -139,6 +202,53 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "strategy.check_interval",
     )
 
+    mode = str(strategy_config.get("mode", MODE_DRY_RUN)).strip().upper()
+
+    if mode not in MODES:
+        raise ValueError(
+            f"strategy.mode must be one of {', '.join(MODES)}"
+        )
+
+    slippage_bps = _to_int_in_range(
+        strategy_config.get("slippage_bps", DEFAULT_SLIPPAGE_BPS),
+        "strategy.slippage_bps",
+        0,
+        9_999,
+    )
+
+    raw_max_gas_cost_usd = strategy_config.get("max_gas_cost_usd")
+
+    if raw_max_gas_cost_usd is None or (
+        isinstance(raw_max_gas_cost_usd, str)
+        and not raw_max_gas_cost_usd.strip()
+    ):
+        max_gas_cost_usd = None
+    else:
+        max_gas_cost_usd = _to_decimal(
+            raw_max_gas_cost_usd,
+            "strategy.max_gas_cost_usd",
+        )
+
+        if max_gas_cost_usd < 0:
+            raise ValueError(
+                "strategy.max_gas_cost_usd must be non-negative"
+            )
+
+    burn_closed_position = _to_bool(
+        strategy_config.get("burn_closed_position", False),
+        "strategy.burn_closed_position",
+    )
+
+    swap_router_address = _optional_address(
+        (config.get("swap_router") or {}).get("address", ""),
+        "swap_router.address",
+    )
+
+    quoter_address = _optional_address(
+        (config.get("quoter") or {}).get("address", ""),
+        "quoter.address",
+    )
+
     oracle_config = config.get("oracle") or {}
     weth_config = config.get("weth") or {}
 
@@ -153,6 +263,10 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         range_half_width=range_half_width,
         fee_threshold_usd=fee_threshold_usd,
         check_interval=check_interval,
+        mode=mode,
+        slippage_bps=slippage_bps,
+        max_gas_cost_usd=max_gas_cost_usd,
+        burn_closed_position=burn_closed_position,
         expected_chain_id=expected_chain_id,
         network=network,
         dex=str(config.get("dex", "pancakeswap_v3")).strip().lower(),
@@ -160,6 +274,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         position_token_id=position_token_id,
         wallet_address=wallet_address,
         weth_address=weth_address,
+        swap_router_address=swap_router_address,
+        quoter_address=quoter_address,
         token0_usd_feed=str(oracle_config.get("token0_usd_feed", "")).strip(),
         token1_usd_feed=str(oracle_config.get("token1_usd_feed", "")).strip(),
         oracle_max_age_seconds=_to_positive_int(
