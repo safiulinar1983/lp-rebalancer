@@ -156,7 +156,11 @@ def make_cycle(
     store=None,
 ):
     """Return ``(cycle, position_manager, tokens)`` with every call faked."""
-    config = load_config() if config is None else config
+    config = (
+        replace(load_config(), position_token_id=TOKEN_ID)
+        if config is None
+        else config
+    )
     state = make_state() if state is None else state
     position = (
         make_position(
