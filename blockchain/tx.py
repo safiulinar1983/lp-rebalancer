@@ -56,7 +56,14 @@ def build_transaction(
         {
             "from": account.address,
             "value": value,
-            "nonce": w3.eth.get_transaction_count(account.address),
+            # Include transactions that are already broadcast but not mined
+            # yet: reading the latest nonce can return the one just consumed
+            # when the RPC has not caught up, which makes the next send look
+            # like an underpriced replacement.
+            "nonce": w3.eth.get_transaction_count(
+                account.address,
+                "pending",
+            ),
             "chainId": w3.eth.chain_id,
             "gas": gas_limit,
             "gasPrice": w3.eth.gas_price if gas_price is None else gas_price,

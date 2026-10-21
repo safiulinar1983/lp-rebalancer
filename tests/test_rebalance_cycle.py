@@ -546,6 +546,72 @@ def test_rebalance_live_sends_every_step_in_order(monkeypatch):
     assert position_manager.get_token_ids.call_count == 2
 
 
+def test_live_mint_revert_is_retried_with_recalculated_amounts(monkeypatch):
+    router = SimpleNamespace(
+        address=SWAP_ROUTER,
+        can_quote=True,
+        quote_exact_input_single=Mock(return_value=4_900_000_000),
+        build_exact_input_single=Mock(
+            return_value=FakeFunctionCall("swap")
+        ),
+    )
+
+    config = replace(load_config(), mode=MODE_LIVE)
+    cycle, position_manager, tokens = make_cycle(
+        config=config,
+        action="REBALANCE",
+        proposed=(-100, 100),
+        close_amounts=(5_000_000_000, 0),
+        wallet_balances=(5_000_000_000, 0),
+        minted_token_id=111,
+        swap_router=router,
+        account=SimpleNamespace(),
+    )
+
+    state_before = cycle.pool.read_state()
+    state_after = make_state(
+        tick=-50,
+        sqrt_price_x96=SQRT_PRICE_X96 * 999 // 1000,
+        price=Decimal("0.999"),
+    )
+    cycle.pool.read_state = Mock(side_effect=[state_before, state_after])
+
+    sent = []
+    mint_attempts = 0
+
+    def sender(w3, account, function_call, *, gas_limit):
+        nonlocal mint_attempts
+        sent.append(function_call.name)
+
+        if function_call.name == "mint":
+            mint_attempts += 1
+
+            if mint_attempts == 1:
+                # The swap left different balances than the pre-swap plan
+                # assumed, so the first mint fails its price slippage check.
+                tokens[TOKEN0].balance = 1_000_000_000
+                tokens[TOKEN1].balance = 1_000_000_000
+                raise RuntimeError("Transaction 0xdead was reverted on chain")
+
+        return TxReceipt(
+            tx_hash=f"0x{len(sent):064x}",
+            status=1,
+            block_number=len(sent),
+            gas_used=gas_limit // 2,
+        )
+
+    monkeypatch.setattr(rebalance_cycle, "send_transaction", sender)
+
+    result = cycle.run()
+
+    assert result.blocked is False
+    assert mint_attempts == 2
+    assert sent.count("mint") == 2
+    assert position_manager.build_mint.call_count == 2
+    assert result.plan.required_token0_raw <= 1_000_000_000
+    assert result.plan.required_token1_raw <= 1_000_000_000
+
+
 def test_new_token_id_is_ignored_when_it_cannot_be_told_apart(monkeypatch):
     sender, _ = make_sender()
     monkeypatch.setattr(rebalance_cycle, "send_transaction", sender)

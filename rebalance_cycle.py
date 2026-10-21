@@ -55,6 +55,7 @@ from blockchain.swap_router import SwapRouter
 from blockchain.token_balances import TokenBalances
 from blockchain.tx import send_transaction, simulate
 from rebalance_planner import (
+    build_rebalance_plan,
     build_rebalance_plan_with_swap,
     plan_swap_to_match_ratio,
 )
@@ -457,7 +458,7 @@ class RebalanceCycle:
                 blocked_reason=reason,
             )
 
-        steps = self._rebalance_steps(
+        steps, plan = self._rebalance_steps(
             state,
             position,
             plan,
@@ -485,8 +486,14 @@ class RebalanceCycle:
         plan: RebalancePlan,
         swap: SwapPlan | None,
         close_result: ClosePositionResult,
-    ) -> tuple[CycleStep, ...]:
-        """Run (LIVE) or prepare (DRY_RUN) the rebalance steps in order."""
+    ) -> tuple[tuple[CycleStep, ...], RebalancePlan]:
+        """Run (LIVE) or prepare (DRY_RUN) the rebalance steps in order.
+
+        The swap moves the pool price, so the mint amounts calculated from the
+        pre-swap price can fail the position manager's price slippage check.
+        On that revert the cycle re-reads the pool and balances once and
+        recalculates the mint at the price the swap actually left behind.
+        """
         steps: list[CycleStep] = [
             self._send_or_simulate(
                 "close_position",
@@ -515,9 +522,46 @@ class RebalanceCycle:
         if swap is not None:
             steps.extend(self._swap_steps(state, swap))
 
-        steps.extend(self._mint_steps(state, plan))
+        try:
+            steps.extend(self._mint_steps(state, plan))
+        except RuntimeError as exc:
+            if not self.live or "reverted on chain" not in str(exc):
+                raise
 
-        return tuple(steps)
+            # The swap has already been mined: recalculate the mint from the
+            # pool state and wallet balances it actually left behind.
+            state = self.pool.read_state()
+            balances = TokenBalances(
+                token0_raw=self._token_factory(state.token0).balance_of(
+                    self.config.wallet_address
+                ),
+                token1_raw=self._token_factory(state.token1).balance_of(
+                    self.config.wallet_address
+                ),
+            )
+            plan = build_rebalance_plan(
+                network=self.config.network,
+                pool_address=self.config.pool_address,
+                token_id=position.token_id,
+                current_tick=state.tick,
+                old_lower_tick=position.lower_tick,
+                old_upper_tick=position.upper_tick,
+                new_lower_tick=plan.new_lower_tick,
+                new_upper_tick=plan.new_upper_tick,
+                sqrt_price_x96=state.sqrt_price_x96,
+                token0_balance_raw=balances.token0_raw,
+                token1_balance_raw=balances.token1_raw,
+            )
+
+            if plan.is_blocked:
+                raise RuntimeError(
+                    "Mint reverted and the recalculated plan is blocked: "
+                    f"{plan.blocked_reason or plan.balance_check_reason}"
+                )
+
+            steps.extend(self._mint_steps(state, plan))
+
+        return tuple(steps), plan
 
     def _mint_steps(
         self,
