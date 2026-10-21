@@ -89,6 +89,11 @@ chain id с RPC перед любыми транзакциями. Внутри �
 WETH в Base. Приватный ключ читается только из `.env`; скрипты проверяют, что
 адрес из ключа совпадает с `wallet.address`.
 
+Пустой `oracle.token0_usd_feed` или `oracle.token1_usd_feed` означает, что
+соответствующий токен — USD-стейблкоин и оценивается в `$1`; оба фида пустыми
+быть не могут. Порядок токенов зависит от сети: на Base Sepolia `token0` — USDC,
+а на Base mainnet `token0` — WETH, поэтому ETH/USD фид задаётся для `token0`.
+
 Base Sepolia используется для разработки и тестирования. В пуле Uniswap V3
 USDC/WETH ликвидность есть; пулы PancakeSwap V3 на Base Sepolia пока пустые,
 поэтому PancakeSwap проверяется на mainnet с небольшим балансом.

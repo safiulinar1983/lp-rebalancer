@@ -35,11 +35,18 @@ def _oracle_price(w3: Web3, feed_address: str, max_age_seconds: int) -> Decimal:
 def resolve_token_prices(w3: Web3, config: AppConfig) -> tuple[Decimal, Decimal]:
     """Return ``(token0_usd, token1_usd)`` for the configured pool.
 
-    An empty ``oracle.token0_usd_feed`` means token0 is a USD stablecoin and is
-    valued at $1. An empty ``oracle.token1_usd_feed`` is an error: the pool spot
-    price is a token0/token1 ratio, not a USD price, so it must not silently
-    replace a missing feed.
+    An empty feed means that token is a USD stablecoin and is valued at $1.
+    Either side may be the stablecoin: on Base Sepolia USDC is token0, while on
+    Base mainnet WETH is token0 and USDC is token1. Both feeds being empty is an
+    error, and the pool spot price is never used as a substitute for a missing
+    feed.
     """
+    if not config.token0_usd_feed and not config.token1_usd_feed:
+        raise RuntimeError(
+            "At least one oracle feed is required: "
+            "a pool spot price is not a USD price"
+        )
+
     if config.token0_usd_feed:
         token0_price_usd = _oracle_price(
             w3,
@@ -49,17 +56,14 @@ def resolve_token_prices(w3: Web3, config: AppConfig) -> tuple[Decimal, Decimal]
     else:
         token0_price_usd = STABLECOIN_PRICE_USD
 
-    if not config.token1_usd_feed:
-        raise RuntimeError(
-            "oracle.token1_usd_feed is required: "
-            "a pool spot price is not a USD price"
+    if config.token1_usd_feed:
+        token1_price_usd = _oracle_price(
+            w3,
+            config.token1_usd_feed,
+            config.oracle_max_age_seconds,
         )
-
-    token1_price_usd = _oracle_price(
-        w3,
-        config.token1_usd_feed,
-        config.oracle_max_age_seconds,
-    )
+    else:
+        token1_price_usd = STABLECOIN_PRICE_USD
 
     return token0_price_usd, token1_price_usd
 

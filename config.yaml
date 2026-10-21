@@ -63,34 +63,37 @@ networks:
       address: "0x4200000000000000000000000000000000000006"
 
     oracle:
-      token0_usd_feed: ""
-      # TODO: verify the Base mainnet ETH/USD feed before LIVE.
+      # WETH sorts before USDC on mainnet, so token0 is WETH and token1 is
+      # USDC. The ETH/USD feed values token0; the empty token1 feed marks USDC
+      # as a $1 stablecoin.
+      token0_usd_feed: "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70"
       token1_usd_feed: ""
       max_age_seconds: 3600
 
-    # Fill these with verified Base mainnet addresses before switching
-    # `network` to 8453; empty addresses are rejected for the selected DEX.
+    # Verified Base mainnet deployments (Uniswap V3 docs and PancakeSwap V3
+    # addresses). Pools are the USDC/WETH 0.05% (fee 500) pools returned by the
+    # factories' getPool(USDC, WETH, 500).
     dexes:
       uniswap_v3:
         pool:
-          address: ""
+          address: "0xd0b53D9277642d899DF5C87A3966A349A798F224"
         position_manager:
-          address: ""
+          address: "0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1"
           token_id:
         swap_router:
-          address: ""
+          address: "0x2626664c2603336E57B271c5C0b26F421741e481"
         quoter:
-          address: ""
+          address: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"
       pancakeswap_v3:
         pool:
-          address: ""
+          address: "0xB775272E537cc670C65DC852908aD47015244EaF"
         position_manager:
-          address: ""
+          address: "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364"
           token_id:
         swap_router:
-          address: ""
+          address: "0x1b81D678ffb9C0263b24A97847620C99d213eB14"
         quoter:
-          address: ""
+          address: "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997"
 
 strategy:
   # Relative half-width of the target range: 0.01 == +-1%.
