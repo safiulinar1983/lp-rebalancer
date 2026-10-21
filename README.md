@@ -53,7 +53,9 @@
 
 - `python scripts/wrap_weth.py --amount-eth 0.0001`
 - `python scripts/approve_weth.py` — без `--amount` выдаёт unlimited allowance.
-- `python scripts/mint_position.py --tick-lower 219000 --tick-upper 219200`
+- `python scripts/mint_position.py --tick-lower <нижний тик> --tick-upper <верхний тик>`
+  — границы должны быть кратны tick spacing пула и охватывать текущий тик
+  (см. `python scripts/monitor_pool.py`).
 
 Полный цикл ребалансировки; поведение задаёт `strategy.mode` в `config.yaml`:
 
@@ -76,6 +78,12 @@ chain id с RPC перед любыми транзакциями. Внутри �
 `rpc_url` может ссылаться на переменную окружения:
 `"${BASE_RPC_URL:-https://sepolia.base.org}"`. `.env` рядом с `config.yaml`
 загружается автоматически, а fallback используется, если переменная не задана.
+
+Для Base mainnet задайте `network: 8453`, выберите DEX (`dex: pancakeswap_v3`
+или `dex: uniswap_v3`) и укажите в `.env` mainnet RPC, например
+`BASE_RPC_URL=https://mainnet.base.org`. Профили `8453` уже содержат проверенные
+адреса контрактов; для `LIVE` останется пополнить кошелёк и задать `token_id`
+существующей позиции либо сначала выполнить mint.
 
 Адреса контрактов сгруппированы в `dexes` по имени DEX (`uniswap_v3`,
 `pancakeswap_v3`): для каждого профиля задаются `pool`, `position_manager`
