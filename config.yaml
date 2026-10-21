@@ -1,4 +1,4 @@
-# LP rebalancer configuration (v0.3.5).
+# LP rebalancer configuration (v0.4.0).
 # Numbers under `strategy` are parsed as Decimal, never as binary floats.
 
 # Chain id of the network profile to use. `connect()` verifies that the RPC
@@ -108,7 +108,7 @@ strategy:
   # Optional per-operation gas cost ceiling in USD; empty means no limit.
   max_gas_cost_usd:
   # Burn the emptied NFT after closing a position (costs gas, keeps lists clean).
-  burn_closed_position: false
+  burn_closed_position: true
 
 transaction:
   # Minimum ETH that must remain after the estimated gas of a whole cycle.

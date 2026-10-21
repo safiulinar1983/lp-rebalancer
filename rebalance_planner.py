@@ -7,8 +7,7 @@ from rebalance_plan import RebalancePlan
 from blockchain.close_position_result import ClosePositionResult
 from blockchain.balance_requirements import (
     TokenBalances,
-    max_liquidity_for_balances,
-    required_token_amounts,
+    allocate_liquidity,
 )
 from blockchain.call_params import positive_amount
 from blockchain.liquidity_math import estimate_swap_to_balance
@@ -37,56 +36,12 @@ def build_rebalance_plan(
         token1_raw=token1_balance_raw,
     )
 
-    liquidity = max_liquidity_for_balances(
+    allocation = allocate_liquidity(
         sqrt_price_x96,
         new_lower_tick,
         new_upper_tick,
         available,
     )
-
-    def calculate_requirements(value: int):
-        return required_token_amounts(
-            sqrt_price_x96,
-            new_lower_tick,
-            new_upper_tick,
-            value,
-        )
-
-    required = (
-        calculate_requirements(liquidity)
-        if liquidity > 0
-        else TokenBalances(token0_raw=0, token1_raw=0)
-    )
-
-    # Verify feasibility after the token amounts have been rounded up.
-    if liquidity > 0 and (
-        required.token0_raw > token0_balance_raw
-        or required.token1_raw > token1_balance_raw
-    ):
-        low, high = 0, liquidity
-        while low < high:
-            middle = (low + high + 1) // 2
-            candidate = calculate_requirements(middle)
-            if (
-                candidate.token0_raw <= token0_balance_raw
-                and candidate.token1_raw <= token1_balance_raw
-            ):
-                low = middle
-            else:
-                high = middle - 1
-
-        liquidity = low
-        required = (
-            calculate_requirements(liquidity)
-            if liquidity > 0
-            else TokenBalances(token0_raw=0, token1_raw=0)
-        )
-
-    blocked_reason = None
-    if liquidity == 0:
-        blocked_reason = (
-            "Available balances cannot fund positive liquidity in the target range"
-        )
 
     plan = RebalancePlan(
         network=network,
@@ -99,10 +54,10 @@ def build_rebalance_plan(
         new_upper_tick=new_upper_tick,
         token0_balance_raw=token0_balance_raw,
         token1_balance_raw=token1_balance_raw,
-        required_token0_raw=required.token0_raw,
-        required_token1_raw=required.token1_raw,
-        planned_liquidity=liquidity,
-        blocked_reason=blocked_reason,
+        required_token0_raw=allocation.required.token0_raw,
+        required_token1_raw=allocation.required.token1_raw,
+        planned_liquidity=allocation.liquidity,
+        blocked_reason=allocation.blocked_reason,
     )
     plan.validate()
     return plan

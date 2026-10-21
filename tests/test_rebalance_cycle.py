@@ -396,6 +396,7 @@ def test_rebalance_dry_run_closes_swaps_and_mints():
     assert result.new_token_id is None
     assert [step.name for step in result.steps] == [
         "close_position",
+        "burn",
         "swap",
         "approve",
         "approve",
@@ -403,6 +404,7 @@ def test_rebalance_dry_run_closes_swaps_and_mints():
     ]
     assert [step.status for step in result.steps] == [
         STEP_SIMULATED,
+        STEP_PREPARED,
         STEP_PREPARED,
         STEP_SIMULATED,
         STEP_SIMULATED,
@@ -415,7 +417,7 @@ def test_rebalance_dry_run_closes_swaps_and_mints():
     assert result.swap.token_out == TOKEN1
     assert result.swap.amount_in_raw == 5_000_000_000
     assert result.swap.min_amount_out_raw == 4_975_000_000
-    assert result.steps[1].detail.endswith(
+    assert result.steps[2].detail.endswith(
         "(prepared from the local spot estimate)"
     )
 
@@ -449,7 +451,8 @@ def test_rebalance_dry_run_burns_the_emptied_nft():
         "approve",
         "mint",
     ]
-    assert result.steps[1].status == STEP_SIMULATED
+    assert result.steps[1].status == STEP_PREPARED
+    assert result.steps[1].detail.endswith("(calldata validated locally)")
     position_manager.build_burn.assert_called_once_with(TOKEN_ID)
 
 
@@ -467,6 +470,7 @@ def test_rebalance_dry_run_without_a_swap_skips_the_swap_steps():
     assert result.plan.swap_required is False
     assert [step.name for step in result.steps] == [
         "close_position",
+        "burn",
         "approve",
         "approve",
         "mint",
@@ -509,6 +513,7 @@ def test_rebalance_live_sends_every_step_in_order(monkeypatch):
 
     assert [name for name, _ in sent] == [
         "close_position",
+        "burn",
         "approve",
         "swap",
         "approve",
@@ -517,6 +522,7 @@ def test_rebalance_live_sends_every_step_in_order(monkeypatch):
     ]
     assert [limit for _, limit in sent] == [
         700_000,
+        200_000,
         80_000,
         400_000,
         80_000,
@@ -746,7 +752,7 @@ def test_gas_budget_above_the_limit_blocks_the_cycle():
 
 
 def test_gas_estimate_is_attached_to_the_plan():
-    # $2500 per native token, 1 gwei: close + swap + mint cost $4.5 together.
+    # $2500 per native token, 1 gwei: close + burn + swap + mint cost $5.0.
     config = replace(load_config(), max_gas_cost_usd=Decimal("10"))
     state = make_state(token0=WETH, token1=TOKEN1)
     cycle, _, _ = make_cycle(
@@ -762,9 +768,9 @@ def test_gas_estimate_is_attached_to_the_plan():
 
     assert result.blocked is False
     assert result.swap is not None
-    assert result.plan.estimated_gas_cost_usd == pytest.approx(4.5)
+    assert result.plan.estimated_gas_cost_usd == pytest.approx(5.0)
     assert result.plan.max_gas_cost_usd == 10.0
-    assert "Gas estimate:  $4.500000" in format_cycle_result(result)
+    assert "Gas estimate:  $5.000000" in format_cycle_result(result)
 
 
 def test_live_cycle_is_blocked_before_sending_when_native_balance_is_low(
@@ -890,6 +896,7 @@ def test_approvals_are_skipped_when_the_allowance_is_enough():
 
     assert [step.name for step in result.steps] == [
         "close_position",
+        "burn",
         "swap",
         "mint",
     ]
@@ -976,8 +983,9 @@ def test_report_lists_the_steps_and_the_swap():
     assert f"Swap:          5000000000 raw units of {TOKEN0}" in report
     assert f"min 4975000000 raw units of {TOKEN1}" in report
     assert "1. close_position [simulated]" in report
-    assert "2. swap [prepared]" in report
-    assert "5. mint [prepared]" in report
+    assert "2. burn [prepared]" in report
+    assert "3. swap [prepared]" in report
+    assert "6. mint [prepared]" in report
 
 
 def test_hold_report_says_no_steps_required():

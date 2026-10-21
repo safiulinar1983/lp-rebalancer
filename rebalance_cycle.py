@@ -11,10 +11,10 @@ A cycle turns a strategy decision into the steps a position needs:
 
 ``DRY_RUN`` never signs anything. Steps whose tokens already exist on chain
 (``approve``, ``collect``, ``close_position``) are verified through ``eth_call``
-and reported as ``simulated``. Steps that spend tokens produced by earlier steps
-(``swap``, ``increaseLiquidity``, ``mint``) cannot be verified before those
-tokens exist, so they are reported as ``prepared`` instead of pretending to be
-simulated.
+and reported as ``simulated``. Steps that depend on state produced by earlier
+steps (``burn``, ``swap``, ``increaseLiquidity``, ``mint``) cannot be verified
+before that state changes, so they are reported as ``prepared`` instead of
+pretending to be simulated.
 
 ``LIVE`` sends every step with ``blockchain.tx.send_transaction`` after the gas
 budget of the whole cycle has been checked.
@@ -563,7 +563,7 @@ class RebalanceCycle:
 
         if self.config.burn_closed_position:
             steps.append(
-                self._send_or_simulate(
+                self._send_or_prepare(
                     "burn",
                     self.position_manager.build_burn(position.token_id),
                     detail=f"burn emptied LP NFT #{position.token_id}",
@@ -874,7 +874,8 @@ class RebalanceCycle:
 
         The calldata is built in both modes, so its arguments are validated
         locally even when eth_call cannot succeed yet: the tokens the call
-        spends only exist after the earlier steps are mined.
+        spends and the state it changes only exist after the earlier steps are
+        mined.
         """
         if not self.live:
             return CycleStep(
