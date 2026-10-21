@@ -389,6 +389,79 @@ wallet:
     assert config.quoter_address == ""
 
 
+def test_transaction_safety_defaults_are_backward_compatible(tmp_path):
+    config = load_config(write_config(tmp_path))
+
+    assert config.min_eth_balance_wei == 0
+    assert config.tx_confirmations == 2
+    assert config.tx_timeout_seconds == 180
+
+
+def test_transaction_safety_settings_can_be_configured(tmp_path):
+    path = replaced_config(
+        tmp_path,
+        "strategy:\n",
+        """transaction:
+  min_eth_balance: 0.0005
+  confirmations: 3
+  receipt_timeout_seconds: 42
+
+strategy:
+""",
+    )
+
+    config = load_config(path)
+
+    assert config.min_eth_balance_wei == 500_000_000_000_000
+    assert config.tx_confirmations == 3
+    assert config.tx_timeout_seconds == 42
+
+
+def test_negative_min_eth_balance_is_rejected(tmp_path):
+    path = replaced_config(
+        tmp_path,
+        "strategy:\n",
+        """transaction:
+  min_eth_balance: -0.1
+
+strategy:
+""",
+    )
+
+    with pytest.raises(ValueError, match="transaction.min_eth_balance"):
+        load_config(path)
+
+
+def test_sub_wei_min_eth_balance_is_rejected(tmp_path):
+    path = replaced_config(
+        tmp_path,
+        "strategy:\n",
+        """transaction:
+  min_eth_balance: 0.0000000000000000001
+
+strategy:
+""",
+    )
+
+    with pytest.raises(ValueError, match="at most 18 decimal places"):
+        load_config(path)
+
+
+def test_zero_transaction_confirmations_are_rejected(tmp_path):
+    path = replaced_config(
+        tmp_path,
+        "strategy:\n",
+        """transaction:
+  confirmations: 0
+
+strategy:
+""",
+    )
+
+    with pytest.raises(ValueError, match="transaction.confirmations"):
+        load_config(path)
+
+
 def test_rpc_url_comes_from_the_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("BASE_RPC_URL", "https://rpc.example/private")
 

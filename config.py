@@ -42,6 +42,13 @@ SUPPORTED_DEXES = ("uniswap_v3", "pancakeswap_v3")
 # Default slippage tolerance for swaps and liquidity limits: 0.5%.
 DEFAULT_SLIPPAGE_BPS = 50
 
+# Transaction safety defaults. The reserve is disabled when the config does not
+# set it; config.yaml enables a small explicit reserve for LIVE runs.
+DEFAULT_MIN_ETH_BALANCE = Decimal("0")
+DEFAULT_TX_CONFIRMATIONS = 2
+DEFAULT_TX_TIMEOUT_SECONDS = 180
+WEI_PER_ETH = Decimal(10**18)
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -66,6 +73,9 @@ class AppConfig:
     token0_usd_feed: str
     token1_usd_feed: str
     oracle_max_age_seconds: int
+    min_eth_balance_wei: int
+    tx_confirmations: int
+    tx_timeout_seconds: int
 
 
 def _to_decimal(value: object, name: str) -> Decimal:
@@ -124,6 +134,21 @@ def _to_int_in_range(
         raise ValueError(message)
 
     return result
+
+
+def _eth_to_wei(value: object, name: str) -> int:
+    """Convert an ETH amount to wei without accepting sub-wei precision."""
+    amount = _to_decimal(value, name)
+
+    if amount < 0:
+        raise ValueError(f"{name} must be non-negative")
+
+    wei = amount * WEI_PER_ETH
+
+    if wei != wei.to_integral_value():
+        raise ValueError(f"{name} supports at most 18 decimal places")
+
+    return int(wei)
 
 
 def _to_bool(value: object, name: str) -> bool:
@@ -355,6 +380,26 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         "strategy.burn_closed_position",
     )
 
+    transaction_config = _mapping(config.get("transaction"), "transaction")
+    min_eth_balance_wei = _eth_to_wei(
+        transaction_config.get("min_eth_balance", DEFAULT_MIN_ETH_BALANCE),
+        "transaction.min_eth_balance",
+    )
+    tx_confirmations = _to_positive_int(
+        transaction_config.get(
+            "confirmations",
+            DEFAULT_TX_CONFIRMATIONS,
+        ),
+        "transaction.confirmations",
+    )
+    tx_timeout_seconds = _to_positive_int(
+        transaction_config.get(
+            "receipt_timeout_seconds",
+            DEFAULT_TX_TIMEOUT_SECONDS,
+        ),
+        "transaction.receipt_timeout_seconds",
+    )
+
     swap_router_address = _optional_address(
         swap_router_config.get("address", ""),
         f"dexes.{dex}.swap_router.address",
@@ -407,4 +452,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             oracle_config.get("max_age_seconds", 3600),
             "oracle.max_age_seconds",
         ),
+        min_eth_balance_wei=min_eth_balance_wei,
+        tx_confirmations=tx_confirmations,
+        tx_timeout_seconds=tx_timeout_seconds,
     )

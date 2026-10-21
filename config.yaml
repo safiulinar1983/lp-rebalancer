@@ -110,6 +110,17 @@ strategy:
   # Burn the emptied NFT after closing a position (costs gas, keeps lists clean).
   burn_closed_position: false
 
+transaction:
+  # Minimum ETH that must remain after the estimated gas of a whole cycle.
+  # The cycle is blocked before sending anything when the wallet is below it.
+  min_eth_balance: 0.0002
+  # Blocks to wait after the receipt block (2 == one extra block) and then
+  # re-check that the receipt is still canonical.
+  confirmations: 2
+  # Stop the watcher instead of retrying when a transaction cannot gather
+  # confirmations in this many seconds: its on-chain outcome is unknown.
+  receipt_timeout_seconds: 180
+
 wallet:
   address: "0x87e58e8B5983FC4fF8199d3E16264ad39182a96e"
 

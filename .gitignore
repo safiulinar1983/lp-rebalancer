@@ -21,6 +21,7 @@ venv/
 *.db
 *.sqlite
 *.sqlite3
+data/*.lock
 
 # Logs
 *.log

@@ -154,6 +154,7 @@ def make_cycle(
     swap_router=None,
     account=None,
     store=None,
+    native_balance_wei=10**18,
 ):
     """Return ``(cycle, position_manager, tokens)`` with every call faked."""
     config = (
@@ -211,7 +212,10 @@ def make_cycle(
 
     cycle = RebalanceCycle(
         w3=SimpleNamespace(
-            eth=SimpleNamespace(gas_price=GAS_PRICE_WEI),
+            eth=SimpleNamespace(
+                gas_price=GAS_PRICE_WEI,
+                get_balance=Mock(return_value=native_balance_wei),
+            ),
         ),
         config=config,
         pool=SimpleNamespace(read_state=Mock(return_value=state)),
@@ -363,7 +367,7 @@ def make_sender():
     """
     sent = []
 
-    def sender(w3, account, function_call, *, gas_limit):
+    def sender(w3, account, function_call, *, gas_limit, **kwargs):
         sent.append((function_call.name, gas_limit))
         return TxReceipt(
             tx_hash=f"0x{len(sent):064x}",
@@ -579,7 +583,7 @@ def test_live_mint_revert_is_retried_with_recalculated_amounts(monkeypatch):
     sent = []
     mint_attempts = 0
 
-    def sender(w3, account, function_call, *, gas_limit):
+    def sender(w3, account, function_call, *, gas_limit, **kwargs):
         nonlocal mint_attempts
         sent.append(function_call.name)
 
@@ -761,6 +765,116 @@ def test_gas_estimate_is_attached_to_the_plan():
     assert result.plan.estimated_gas_cost_usd == pytest.approx(4.5)
     assert result.plan.max_gas_cost_usd == 10.0
     assert "Gas estimate:  $4.500000" in format_cycle_result(result)
+
+
+def test_live_cycle_is_blocked_before_sending_when_native_balance_is_low(
+    monkeypatch,
+):
+    sender, sent = make_sender()
+    monkeypatch.setattr(rebalance_cycle, "send_transaction", sender)
+
+    config = replace(
+        load_config(),
+        mode=MODE_LIVE,
+        min_eth_balance_wei=0,
+    )
+    router = SimpleNamespace(
+        address=SWAP_ROUTER,
+        can_quote=True,
+        quote_exact_input_single=Mock(return_value=4_900_000_000),
+        build_exact_input_single=Mock(
+            return_value=FakeFunctionCall("swap")
+        ),
+    )
+    cycle, position_manager, _ = make_cycle(
+        config=config,
+        action="REBALANCE",
+        proposed=(-100, 100),
+        close_amounts=(5_000_000_000, 0),
+        wallet_balances=(5_000_000_000, 0),
+        account=SimpleNamespace(),
+        swap_router=router,
+        native_balance_wei=1_000_000_000_000_000,  # 0.001 ETH
+    )
+
+    result = cycle.run()
+
+    assert result.blocked is True
+    assert "Native balance" in result.blocked_reason
+    assert "required" in result.blocked_reason
+    assert sent == []
+    position_manager.build_close_position.assert_not_called()
+
+
+def test_live_cycle_keeps_the_configured_eth_reserve(monkeypatch):
+    sender, sent = make_sender()
+    monkeypatch.setattr(rebalance_cycle, "send_transaction", sender)
+
+    config = replace(
+        load_config(),
+        mode=MODE_LIVE,
+        min_eth_balance_wei=10**18,
+    )
+    router = SimpleNamespace(
+        address=SWAP_ROUTER,
+        can_quote=True,
+        quote_exact_input_single=Mock(return_value=4_900_000_000),
+        build_exact_input_single=Mock(
+            return_value=FakeFunctionCall("swap")
+        ),
+    )
+    cycle, _, _ = make_cycle(
+        config=config,
+        action="REBALANCE",
+        proposed=(-100, 100),
+        close_amounts=(5_000_000_000, 0),
+        wallet_balances=(5_000_000_000, 0),
+        account=SimpleNamespace(),
+        swap_router=router,
+        native_balance_wei=999_000_000_000_000_000,  # 0.999 ETH
+    )
+
+    result = cycle.run()
+
+    assert result.blocked is True
+    assert "reserve 1.000000000 ETH" in result.blocked_reason
+    assert sent == []
+
+
+def test_live_reorg_between_steps_stops_before_the_next_send(monkeypatch):
+    from blockchain.tx import ChainReorganizationError
+
+    sender, sent = make_sender()
+    monkeypatch.setattr(rebalance_cycle, "send_transaction", sender)
+
+    def reorged(*_args, **_kwargs):
+        raise ChainReorganizationError("receipt left the canonical chain")
+
+    monkeypatch.setattr(rebalance_cycle, "verify_receipt", reorged)
+
+    router = SimpleNamespace(
+        address=SWAP_ROUTER,
+        can_quote=True,
+        quote_exact_input_single=Mock(return_value=4_900_000_000),
+        build_exact_input_single=Mock(
+            return_value=FakeFunctionCall("swap")
+        ),
+    )
+    config = replace(load_config(), mode=MODE_LIVE)
+    cycle, _, _ = make_cycle(
+        config=config,
+        action="REBALANCE",
+        proposed=(-100, 100),
+        close_amounts=(5_000_000_000, 0),
+        wallet_balances=(5_000_000_000, 0),
+        swap_router=router,
+        account=SimpleNamespace(),
+    )
+
+    with pytest.raises(ChainReorganizationError, match="canonical"):
+        cycle.run()
+
+    assert [name for name, _ in sent] == ["close_position"]
 
 
 def test_approvals_are_skipped_when_the_allowance_is_enough():

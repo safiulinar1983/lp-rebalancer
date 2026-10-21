@@ -26,12 +26,14 @@ SCRIPTS = [
     "mint_position.py",
     "check_wallet.py",
     "rebalance.py",
+    "watch.py",
 ]
 
 ARGPARSE_SCRIPTS = [
     "wrap_weth.py",
     "approve_weth.py",
     "mint_position.py",
+    "watch.py",
 ]
 
 

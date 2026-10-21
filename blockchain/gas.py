@@ -26,6 +26,14 @@ DEFAULT_GAS_LIMIT = 500_000
 WEI_PER_NATIVE = Decimal(10**18)
 
 
+def wei_to_native(wei: int) -> Decimal:
+    """Convert a non-negative wei amount to native-token units."""
+    if isinstance(wei, bool) or not isinstance(wei, int) or wei < 0:
+        raise ValueError("wei must be a non-negative integer")
+
+    return Decimal(wei) / WEI_PER_NATIVE
+
+
 def gas_limit_for(operation: str) -> int:
     """Return the gas limit of a named cycle operation."""
     if not isinstance(operation, str) or not operation.strip():

@@ -44,6 +44,7 @@ from blockchain.gas import (
     check_gas_budget,
     gas_limit_for,
     resolve_native_token_price_usd,
+    wei_to_native,
 )
 from blockchain.interfaces import PoolAdapter
 from blockchain.pancake_v3 import PoolState
@@ -53,7 +54,12 @@ from blockchain.slippage import slippage_floor
 from blockchain.swap_plan import SwapPlan
 from blockchain.swap_router import SwapRouter
 from blockchain.token_balances import TokenBalances
-from blockchain.tx import send_transaction, simulate
+from blockchain.tx import (
+    TxReceipt,
+    send_transaction,
+    simulate,
+    verify_receipt,
+)
 from rebalance_planner import (
     build_rebalance_plan,
     build_rebalance_plan_with_swap,
@@ -222,6 +228,9 @@ class RebalanceCycle:
         self._token_factory = token_factory or (
             lambda address: ERC20Token(w3, address)
         )
+        # Receipts sent during the current cycle. They are re-checked before
+        # every next step so a reorg between steps cannot go unnoticed.
+        self._sent_receipts: list[TxReceipt] = []
 
     @property
     def live(self) -> bool:
@@ -235,6 +244,7 @@ class RebalanceCycle:
 
     def run(self) -> CycleResult:
         """Evaluate the position and hold, compound or rebalance it."""
+        self._sent_receipts = []
         state = self.pool.read_state()
 
         position = self.position_manager.find_position(
@@ -298,17 +308,6 @@ class RebalanceCycle:
         amount1_raw: int,
     ) -> CycleResult:
         """Collect the fees and put them back to work in the same NFT."""
-        steps: list[CycleStep] = [
-            self._send_or_simulate(
-                "collect",
-                self.position_manager.build_collect(position.token_id),
-                detail=(
-                    f"collect owed fees of LP NFT #{position.token_id} "
-                    f"({amount0_raw}/{amount1_raw} raw units)"
-                ),
-            )
-        ]
-
         swap = self._plan_swap(
             state=state,
             lower_tick=position.lower_tick,
@@ -324,6 +323,40 @@ class RebalanceCycle:
             )
         else:
             balances = swap.projected_balances
+
+        operations = ["collect"]
+
+        if swap is not None:
+            operations.extend(["approve", "swap"])
+
+        if balances.token0_raw > 0 or balances.token1_raw > 0:
+            # Approvals are counted conservatively even when the allowance is
+            # already sufficient: overestimating gas is safe, underestimating
+            # would let the cycle start without enough ETH.
+            operations.extend(["approve", "approve", "increase_liquidity"])
+
+        gas_reason = self._preflight_gas(operations)
+
+        if gas_reason is not None:
+            return CycleResult(
+                mode=self.config.mode,
+                action="COLLECT_FEES",
+                swap=swap,
+                blocked_reason=gas_reason,
+            )
+
+        steps: list[CycleStep] = [
+            self._send_or_simulate(
+                "collect",
+                self.position_manager.build_collect(position.token_id),
+                detail=(
+                    f"collect owed fees of LP NFT #{position.token_id} "
+                    f"({amount0_raw}/{amount1_raw} raw units)"
+                ),
+            )
+        ]
+
+        if swap is not None:
             steps.extend(self._swap_steps(state, swap))
 
         if balances.token0_raw == 0 and balances.token1_raw == 0:
@@ -458,6 +491,19 @@ class RebalanceCycle:
                 blocked_reason=reason,
             )
 
+        gas_reason = self._preflight_gas(
+            self._rebalance_operations(swap),
+        )
+
+        if gas_reason is not None:
+            return CycleResult(
+                mode=self.config.mode,
+                action="REBALANCE",
+                plan=plan,
+                swap=swap,
+                blocked_reason=gas_reason,
+            )
+
         steps, plan = self._rebalance_steps(
             state,
             position,
@@ -465,6 +511,11 @@ class RebalanceCycle:
             swap,
             close_result,
         )
+
+        if self.live:
+            # The final receipt was checked by send_transaction; check all
+            # step receipts once more before trusting the wallet's NFT list.
+            self._verify_sent_receipts()
 
         new_token_id = (
             self._read_new_token_id(known_token_ids) if self.live else None
@@ -710,6 +761,78 @@ class RebalanceCycle:
             )
         ]
 
+    def _rebalance_operations(self, swap: SwapPlan | None) -> list[str]:
+        """Return the operations whose gas must fit before the cycle starts."""
+        operations = ["close_position"]
+
+        if self.config.burn_closed_position:
+            operations.append("burn")
+
+        if swap is not None:
+            operations.extend(["approve", "swap"])
+
+        # Token0 and token1 approvals for the position manager. They are
+        # counted even when they are already in place: an overestimate only
+        # keeps a small extra reserve, while an underestimate could start a
+        # cycle that runs out of gas halfway through.
+        operations.extend(["approve", "approve", "mint"])
+        return operations
+
+    def _preflight_gas(self, operations: list[str]) -> str | None:
+        """Block a LIVE cycle before its first send when gas cannot be paid.
+
+        The whole cycle is estimated with the fixed gas limits, not with the
+        actual usage: the transaction may consume the full limit. The configured
+        minimum ETH reserve is added on top and must remain in the wallet.
+        """
+        if not self.live:
+            return None
+
+        gas_price_wei = int(self.w3.eth.gas_price)
+        estimated_gas_wei = sum(
+            gas_limit_for(operation) * gas_price_wei
+            for operation in operations
+        )
+        required_wei = self.config.min_eth_balance_wei + estimated_gas_wei
+        balance_wei = int(
+            self.w3.eth.get_balance(self.config.wallet_address)
+        )
+
+        if balance_wei >= required_wei:
+            return None
+
+        return (
+            f"Native balance {wei_to_native(balance_wei):.9f} ETH is below "
+            f"the required {wei_to_native(required_wei):.9f} ETH "
+            f"(estimated gas {wei_to_native(estimated_gas_wei):.9f} ETH + "
+            f"reserve {wei_to_native(self.config.min_eth_balance_wei):.9f} ETH)"
+        )
+
+    def _verify_sent_receipts(self) -> None:
+        """Re-check every receipt sent in this cycle against the canon chain."""
+        for receipt in self._sent_receipts:
+            verify_receipt(self.w3, receipt)
+
+    def _send(
+        self,
+        name: str,
+        function_call: ContractFunction,
+    ) -> TxReceipt:
+        """Send one LIVE step with balance and reorg protections."""
+        self._verify_sent_receipts()
+
+        receipt = send_transaction(
+            self.w3,
+            self.account,
+            function_call,
+            gas_limit=gas_limit_for(name),
+            min_balance_wei=self.config.min_eth_balance_wei,
+            confirmations=self.config.tx_confirmations,
+            timeout=self.config.tx_timeout_seconds,
+        )
+        self._sent_receipts.append(receipt)
+        return receipt
+
     def _send_or_simulate(
         self,
         name: str,
@@ -731,12 +854,7 @@ class RebalanceCycle:
                 status=STEP_SIMULATED,
             )
 
-        receipt = send_transaction(
-            self.w3,
-            self.account,
-            function_call,
-            gas_limit=gas_limit_for(name),
-        )
+        receipt = self._send(name, function_call)
 
         return CycleStep(
             name=name,
@@ -765,12 +883,7 @@ class RebalanceCycle:
                 status=STEP_PREPARED,
             )
 
-        receipt = send_transaction(
-            self.w3,
-            self.account,
-            function_call,
-            gas_limit=gas_limit_for(name),
-        )
+        receipt = self._send(name, function_call)
 
         return CycleStep(
             name=name,

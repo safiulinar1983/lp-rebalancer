@@ -29,7 +29,7 @@ from blockchain.rpc import connect
 from blockchain.swap_router import SwapRouter
 from config import MODE_LIVE, AppConfig, load_config
 from monitor_position import resolve_token_prices
-from rebalance_cycle import RebalanceCycle, format_cycle_result
+from rebalance_cycle import CycleResult, RebalanceCycle, format_cycle_result
 from scripts._common import check_wallet, private_key
 from storage.sqlite_store import SQLiteStore
 from strategy import Strategy
@@ -97,24 +97,49 @@ def build_cycle(
     )
 
 
+def build_account(w3: Web3, config: AppConfig) -> object | None:
+    """Return the signer for LIVE mode, or ``None`` for a dry run.
+
+    The configured wallet and ``PRIVATE_KEY`` are compared once at startup so
+    that a daemon cannot run for hours against the wrong account.
+    """
+    if config.mode != MODE_LIVE:
+        return None
+
+    account = w3.eth.account.from_key(private_key())
+    check_wallet(config.wallet_address, account.address)
+    return account
+
+
+def run_cycle(
+    w3: Web3,
+    config: AppConfig,
+    *,
+    account: object | None = None,
+    store: object | None = None,
+) -> CycleResult:
+    """Build and execute one cycle, returning its structured result."""
+    return build_cycle(
+        w3,
+        config,
+        account=account,
+        store=store,
+    ).run()
+
+
 def main() -> None:
     config = load_config()
     w3 = connect(config.rpc_url, expected_chain_id=config.expected_chain_id)
 
-    account = None
-
-    if config.mode == MODE_LIVE:
-        account = w3.eth.account.from_key(private_key())
-        check_wallet(config.wallet_address, account.address)
-
-    cycle = build_cycle(
+    account = build_account(w3, config)
+    result = run_cycle(
         w3,
         config,
         account=account,
         store=SQLiteStore(),
     )
 
-    print(format_cycle_result(cycle.run()))
+    print(format_cycle_result(result))
 
 
 if __name__ == "__main__":
