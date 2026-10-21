@@ -1,4 +1,4 @@
-"""Read-only PancakeSwap V3 pool report.
+"""Read-only V3 pool report.
 
 Prints the pool state once per ``strategy.check_interval`` seconds. Never
 builds or sends transactions::
@@ -20,6 +20,7 @@ from blockchain.dex_manager import DEXManager
 from blockchain.interfaces import PoolAdapter
 from blockchain.rpc import connect
 from config import AppConfig, load_config
+from scripts._common import dex_title
 
 
 def print_pool_info(
@@ -39,7 +40,7 @@ def print_pool_info(
 
     print()
     print("=" * 50)
-    print("PancakeSwap V3 LP Monitor")
+    print(f"{dex_title(config.dex)} LP Monitor")
     print("=" * 50)
     print(f"Network:       {config.network}")
     print(f"Chain ID:      {chain_id}")

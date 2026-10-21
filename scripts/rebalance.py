@@ -30,7 +30,7 @@ from blockchain.swap_router import SwapRouter
 from config import MODE_LIVE, AppConfig, load_config
 from monitor_position import resolve_token_prices
 from rebalance_cycle import RebalanceCycle, format_cycle_result
-from scripts._common import private_key
+from scripts._common import check_wallet, private_key
 from storage.sqlite_store import SQLiteStore
 from strategy import Strategy
 
@@ -52,6 +52,7 @@ def build_swap_router(
         w3=w3,
         address=config.swap_router_address,
         quoter_address=config.quoter_address,
+        dex=config.dex,
     )
 
 
@@ -104,6 +105,7 @@ def main() -> None:
 
     if config.mode == MODE_LIVE:
         account = w3.eth.account.from_key(private_key())
+        check_wallet(config.wallet_address, account.address)
 
     cycle = build_cycle(
         w3,

@@ -1,7 +1,8 @@
-"""Mint a new PancakeSwap V3 LP position.
+"""Mint a new V3 LP position.
 
-Sends a transaction and is intended for manual experiments: it mints the
-requested tick range with the requested amounts and no slippage protection
+Grants the position manager an unlimited allowance for both pool tokens when
+needed, then sends the ``mint`` transaction. Intended for manual experiments:
+it uses the requested tick range and no slippage protection
 (``amount0Min``/``amount1Min`` are 0), which is safe only for amounts you are
 willing to lose::
 
@@ -19,9 +20,12 @@ from web3 import Web3
 
 from blockchain.abis import POSITION_MANAGER_ABI
 from blockchain.dex_manager import DEXManager
+from blockchain.erc20 import ERC20Token
+from blockchain.gas import gas_limit_for
 from blockchain.rpc import connect
+from blockchain.tx import send_transaction
 from config import AppConfig, load_config
-from scripts._common import private_key
+from scripts._common import check_wallet, private_key
 
 DEADLINE_SECONDS = 600
 
@@ -71,6 +75,7 @@ def mint_position(
 
     w3 = connect(config.rpc_url, expected_chain_id=config.expected_chain_id)
     account = w3.eth.account.from_key(private_key())
+    check_wallet(config.wallet_address, account.address)
 
     pool = DEXManager.create_pool(
         dex_name=config.dex,
@@ -118,6 +123,35 @@ def mint_position(
     print(f"Amount0:       {amount0_desired}")
     print(f"Amount1:       {amount1_desired}")
     print("=" * 50)
+
+    # The position manager pulls both tokens during the mint. An unlimited
+    # allowance is granted once, so repeated mints need no extra approve.
+    for label, token, amount in (
+        ("token0", state.token0, amount0_desired),
+        ("token1", state.token1, amount1_desired),
+    ):
+        erc20 = ERC20Token(w3, token)
+
+        if not erc20.needs_approval(
+            account.address,
+            config.position_manager_address,
+            amount,
+        ):
+            continue
+
+        print(
+            f"Approving {label}: unlimited allowance for the "
+            "position manager"
+        )
+
+        approval = send_transaction(
+            w3,
+            account,
+            erc20.build_max_approve(config.position_manager_address),
+            gas_limit=gas_limit_for("approve"),
+        )
+
+        print(f"Approval:      {approval.tx_hash}")
 
     tx = position_manager.functions.mint(params).build_transaction(
         {

@@ -19,7 +19,7 @@ from web3 import Web3
 from blockchain.abis import WETH_ABI
 from blockchain.rpc import connect
 from config import AppConfig, load_config
-from scripts._common import private_key
+from scripts._common import check_wallet, private_key
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -40,6 +40,7 @@ def wrap_weth(config: AppConfig, amount_eth: Decimal) -> None:
 
     w3 = connect(config.rpc_url, expected_chain_id=config.expected_chain_id)
     account = w3.eth.account.from_key(private_key())
+    check_wallet(config.wallet_address, account.address)
 
     weth = w3.eth.contract(
         address=Web3.to_checksum_address(config.weth_address),

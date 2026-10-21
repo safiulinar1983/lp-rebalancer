@@ -11,6 +11,10 @@ from pathlib import Path
 
 import pytest
 
+from blockchain.erc20 import MAX_UINT256
+from scripts._common import check_wallet, dex_title
+from scripts.approve_weth import parse_args as parse_approve_args
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 
@@ -20,6 +24,7 @@ SCRIPTS = [
     "wrap_weth.py",
     "approve_weth.py",
     "mint_position.py",
+    "check_wallet.py",
     "rebalance.py",
 ]
 
@@ -72,6 +77,48 @@ def test_script_help_does_not_touch_the_network(tmp_path, script):
 
     assert result.returncode == 0, result.stderr
     assert "usage" in result.stdout.lower()
+
+
+def test_approve_weth_defaults_to_unlimited_allowance():
+    assert parse_approve_args([]).amount == MAX_UINT256
+
+
+def test_approve_weth_accepts_an_exact_amount():
+    assert parse_approve_args(["--amount", "123"]).amount == 123
+
+
+def test_check_wallet_accepts_case_insensitive_match():
+    check_wallet(
+        "0x" + "a" * 40,
+        "0x" + "A" * 40,
+    )
+
+
+def test_check_wallet_rejects_a_different_signer():
+    with pytest.raises(RuntimeError, match="does not match wallet.address"):
+        check_wallet("0x" + "a" * 40, "0x" + "b" * 40)
+
+
+@pytest.mark.parametrize(
+    ("dex", "title"),
+    [
+        ("uniswap_v3", "Uniswap V3"),
+        ("PancakeSwap_v3", "PancakeSwap V3"),
+        ("custom", "custom"),
+    ],
+)
+def test_dex_title_is_human_readable(dex, title):
+    assert dex_title(dex) == title
+
+
+@pytest.mark.parametrize(
+    "script",
+    ["approve_weth.py", "mint_position.py", "rebalance.py", "wrap_weth.py"],
+)
+def test_signing_scripts_verify_the_configured_wallet(script):
+    source = (SCRIPTS_DIR / script).read_text(encoding="utf-8")
+
+    assert "check_wallet(config.wallet_address, account.address)" in source
 
 
 @pytest.mark.parametrize("script", SCRIPTS)

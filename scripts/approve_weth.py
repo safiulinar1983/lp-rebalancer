@@ -1,7 +1,7 @@
-"""Approve WETH spending for the PancakeSwap position manager.
+"""Approve unlimited WETH spending for the V3 position manager.
 
-Sends a transaction. The amount is passed in raw WETH units (18 decimals), so
-the default ``100000000000000`` is 0.0001 WETH::
+Sends a transaction. By default the allowance is unlimited, so a single run is
+enough for repeated mints; ``--amount`` can still set an exact raw amount::
 
     python scripts/approve_weth.py
     python scripts/approve_weth.py --amount 200000000000000
@@ -17,9 +17,10 @@ if __package__ in (None, ""):  # allow `python scripts/approve_weth.py`
 from web3 import Web3
 
 from blockchain.abis import ERC20_ABI
+from blockchain.erc20 import MAX_UINT256
 from blockchain.rpc import connect
 from config import AppConfig, load_config
-from scripts._common import private_key
+from scripts._common import check_wallet, private_key
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -27,8 +28,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--amount",
         type=int,
-        default=100_000_000_000_000,
-        help="allowance in raw WETH units (default: 100000000000000 = 0.0001 WETH)",
+        default=MAX_UINT256,
+        help="allowance in raw WETH units (default: unlimited)",
     )
     return parser.parse_args(argv)
 
@@ -40,6 +41,7 @@ def approve_weth(config: AppConfig, amount: int) -> None:
 
     w3 = connect(config.rpc_url, expected_chain_id=config.expected_chain_id)
     account = w3.eth.account.from_key(private_key())
+    check_wallet(config.wallet_address, account.address)
 
     spender = Web3.to_checksum_address(config.position_manager_address)
 
@@ -50,11 +52,13 @@ def approve_weth(config: AppConfig, amount: int) -> None:
 
     allowance = weth.functions.allowance(account.address, spender).call()
 
+    new_allowance = "unlimited" if amount == MAX_UINT256 else amount
+
     print(f"Wallet:           {account.address}")
     print(f"WETH:             {weth.address}")
     print(f"Position manager: {spender}")
     print(f"Current allowance:{allowance}")
-    print(f"New allowance:    {amount}")
+    print(f"New allowance:    {new_allowance}")
     print()
 
     tx = weth.functions.approve(spender, amount).build_transaction(

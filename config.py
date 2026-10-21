@@ -2,13 +2,27 @@
 
 Strategy numbers are returned as ``Decimal`` so that no binary floating point
 value ever reaches the price or balance math.
+
+Network profiles live under ``networks`` and are keyed by chain id; the
+top-level ``network`` value selects one of them and ``connect`` verifies the
+RPC chain id at runtime. Per-network settings include the RPC endpoint, WETH,
+oracle feeds and the ``dexes`` map. The ``dex`` key selects one DEX profile,
+which is resolved into the flat ``AppConfig`` fields used by the rest of the
+application.
+
+RPC URLs may reference environment variables, e.g.
+``${BASE_RPC_URL:-https://sepolia.base.org}``; ``.env`` next to the config
+file is loaded before expansion.
 """
 
+import os
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 import yaml
+from dotenv import load_dotenv
 
 # Repository-root config file; used when no explicit path is passed.
 CONFIG_PATH = Path(__file__).resolve().parent / "config.yaml"
@@ -20,6 +34,10 @@ DEFAULT_WETH_ADDRESS = "0x4200000000000000000000000000000000000006"
 MODE_DRY_RUN = "DRY_RUN"
 MODE_LIVE = "LIVE"
 MODES = (MODE_DRY_RUN, MODE_LIVE)
+
+# DEX adapters supported by the pool and swap-router layers.
+DEFAULT_DEX = "pancakeswap_v3"
+SUPPORTED_DEXES = ("uniswap_v3", "pancakeswap_v3")
 
 # Default slippage tolerance for swaps and liquidity limits: 0.5%.
 DEFAULT_SLIPPAGE_BPS = 50
@@ -131,6 +149,44 @@ def _optional_address(value: object, name: str) -> str:
     return text
 
 
+def _required_address(value: object, name: str) -> str:
+    """Return a required 0x-prefixed address; an empty value is an error."""
+    address = _optional_address(value, name)
+
+    if not address:
+        raise ValueError(f"{name} is empty")
+
+    return address
+
+
+def _mapping(value: object, name: str) -> dict:
+    """Return a YAML mapping, treating a missing value as an empty one."""
+    if value is None:
+        return {}
+
+    if not isinstance(value, dict):
+        raise ValueError(f"{name} must be a mapping")
+
+    return value
+
+
+_ENV_REFERENCE = re.compile(
+    r"^\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}$"
+)
+
+
+def _resolve_env(value: object) -> str:
+    """Expand a ``${NAME}`` or ``${NAME:-default}`` reference from the env."""
+    text = str(value or "").strip()
+    match = _ENV_REFERENCE.fullmatch(text)
+
+    if match is None:
+        return text
+
+    name, default = match.groups()
+    return os.environ.get(name, "").strip() or (default or "").strip()
+
+
 def load_config(path: str | Path | None = None) -> AppConfig:
     """Load and validate the application configuration.
 
@@ -138,45 +194,105 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     work from any working directory.
     """
     config_path = Path(path) if path is not None else CONFIG_PATH
+    load_dotenv(config_path.parent / ".env")
 
     with open(config_path, "r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
 
-    network = config["network"]
-    networks = config["networks"]
+    networks = config.get("networks")
 
-    if network not in networks:
-        raise ValueError(f"Unknown network: {network}")
+    if not isinstance(networks, dict):
+        raise ValueError("networks must map chain ids to network settings")
 
-    network_config = networks[network]
+    raw_chain_id = config.get("network")
 
-    rpc_url = str(network_config["rpc_url"]).strip()
-    expected_chain_id = int(network_config["chain_id"])
+    if raw_chain_id is None:
+        raise ValueError("network (chain id) is required")
+
+    try:
+        expected_chain_id = int(raw_chain_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"network must be a chain id, got {raw_chain_id!r}"
+        ) from exc
+
+    network_config = networks.get(expected_chain_id)
+
+    if network_config is None:
+        network_config = networks.get(str(expected_chain_id))
+
+    if not isinstance(network_config, dict):
+        raise ValueError(f"Unknown chain_id: {expected_chain_id}")
+
+    network = str(
+        network_config.get("name") or expected_chain_id
+    ).strip()
+
+    rpc_url = _resolve_env(network_config.get("rpc_url", ""))
 
     if not rpc_url:
-        raise ValueError("RPC URL is empty")
+        raise ValueError(
+            f"RPC URL is empty for chain_id {expected_chain_id}: "
+            "set BASE_RPC_URL or rpc_url"
+        )
 
-    pool_address = str(config["pool"]["address"]).strip()
+    dex = str(config.get("dex", DEFAULT_DEX)).strip().lower()
 
-    if not pool_address:
-        raise ValueError("Pool address is empty")
+    if dex not in SUPPORTED_DEXES:
+        raise ValueError(
+            f"dex must be one of {', '.join(SUPPORTED_DEXES)}"
+        )
 
-    position_manager_address = str(config["position_manager"]["address"]).strip()
+    dexes = network_config.get("dexes")
+
+    if not isinstance(dexes, dict):
+        raise ValueError(
+            f"chain_id {expected_chain_id}: dexes must map DEX names to "
+            "their pool, position manager, swap router and quoter settings"
+        )
+
+    profile = dexes.get(dex)
+
+    if not isinstance(profile, dict):
+        raise ValueError(
+            f"dexes.{dex} is missing or is not a mapping; add the settings "
+            "for the selected DEX"
+        )
+
+    pool_config = _mapping(profile.get("pool"), f"dexes.{dex}.pool")
+    position_manager_config = _mapping(
+        profile.get("position_manager"),
+        f"dexes.{dex}.position_manager",
+    )
+    swap_router_config = _mapping(
+        profile.get("swap_router"),
+        f"dexes.{dex}.swap_router",
+    )
+    quoter_config = _mapping(
+        profile.get("quoter"),
+        f"dexes.{dex}.quoter",
+    )
+
+    pool_address = _required_address(
+        pool_config.get("address", ""),
+        f"dexes.{dex}.pool.address",
+    )
+    position_manager_address = _required_address(
+        position_manager_config.get("address", ""),
+        f"dexes.{dex}.position_manager.address",
+    )
     wallet_address = str(config["wallet"]["address"]).strip()
-
-    if not position_manager_address:
-        raise ValueError("Position manager address is empty")
 
     if not wallet_address:
         raise ValueError("Wallet address is empty")
 
-    raw_token_id = config["position_manager"].get("token_id")
+    raw_token_id = position_manager_config.get("token_id")
     if raw_token_id is None:
         position_token_id = None
     else:
         position_token_id = _to_positive_int(
             raw_token_id,
-            "position_manager.token_id",
+            f"dexes.{dex}.position_manager.token_id",
         )
 
     strategy_config = config["strategy"]
@@ -240,19 +356,28 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     )
 
     swap_router_address = _optional_address(
-        (config.get("swap_router") or {}).get("address", ""),
-        "swap_router.address",
+        swap_router_config.get("address", ""),
+        f"dexes.{dex}.swap_router.address",
     )
 
     quoter_address = _optional_address(
-        (config.get("quoter") or {}).get("address", ""),
-        "quoter.address",
+        quoter_config.get("address", ""),
+        f"dexes.{dex}.quoter.address",
     )
 
-    oracle_config = config.get("oracle") or {}
-    weth_config = config.get("weth") or {}
+    oracle_config = _mapping(
+        network_config.get("oracle"),
+        f"chain_id {expected_chain_id}.oracle",
+    )
+    weth_config = _mapping(
+        network_config.get("weth"),
+        f"chain_id {expected_chain_id}.weth",
+    )
 
-    weth_address = str(weth_config.get("address", DEFAULT_WETH_ADDRESS)).strip()
+    weth_address = _optional_address(
+        weth_config.get("address", DEFAULT_WETH_ADDRESS),
+        "weth.address",
+    )
 
     if not weth_address:
         raise ValueError("weth.address is empty")
@@ -269,7 +394,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         burn_closed_position=burn_closed_position,
         expected_chain_id=expected_chain_id,
         network=network,
-        dex=str(config.get("dex", "pancakeswap_v3")).strip().lower(),
+        dex=dex,
         position_manager_address=position_manager_address,
         position_token_id=position_token_id,
         wallet_address=wallet_address,

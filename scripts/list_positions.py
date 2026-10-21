@@ -1,4 +1,4 @@
-"""List the PancakeSwap V3 LP positions owned by the configured wallet.
+"""List the V3 LP positions owned by the configured wallet.
 
 Read-only: uses ``PositionManager`` and the shared ABI constants::
 
@@ -14,6 +14,7 @@ if __package__ in (None, ""):  # allow `python scripts/list_positions.py`
 from blockchain.position_manager import PositionManager
 from blockchain.rpc import connect
 from config import AppConfig, load_config
+from scripts._common import dex_title
 
 
 def print_positions(
@@ -26,7 +27,7 @@ def print_positions(
 
     print()
     print("=" * 50)
-    print("PancakeSwap V3 LP Positions")
+    print(f"{dex_title(config.dex)} LP Positions")
     print("=" * 50)
     print(f"Network:           {config.network}")
     print(f"Chain ID:          {chain_id}")

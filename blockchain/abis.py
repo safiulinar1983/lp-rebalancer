@@ -292,8 +292,9 @@ POSITION_MANAGER_ABI = [
     },
 ]
 
-# PancakeSwap V3 QuoterV2: quoting happens through ``eth_call`` because the
-# function is not a view function on chain.
+# QuoterV2, shared by Uniswap V3 and PancakeSwap V3: both use the same struct
+# order, with ``amountIn`` before ``fee``. Quoting happens through ``eth_call``
+# because the function is not a view function on chain.
 QUOTER_V2_ABI = [
     {
         "inputs": [
@@ -321,18 +322,52 @@ QUOTER_V2_ABI = [
     },
 ]
 
-# PancakeSwap V3 SwapRouter uses the Uniswap V3 SwapRouter02 parameter shape:
-# a single struct without a deadline field.
-SWAP_ROUTER_ABI = [
+# Uniswap V3 SwapRouter02 takes one struct without a deadline field.
+# Selector: 0x04e45aaf.
+UNISWAP_V3_SWAP_ROUTER_ABI = [
     {
         "inputs": [
-            {"name": "tokenIn", "type": "address"},
-            {"name": "tokenOut", "type": "address"},
-            {"name": "fee", "type": "uint24"},
-            {"name": "recipient", "type": "address"},
-            {"name": "amountIn", "type": "uint256"},
-            {"name": "amountOutMinimum", "type": "uint256"},
-            {"name": "sqrtPriceLimitX96", "type": "uint160"},
+            {
+                "components": [
+                    {"name": "tokenIn", "type": "address"},
+                    {"name": "tokenOut", "type": "address"},
+                    {"name": "fee", "type": "uint24"},
+                    {"name": "recipient", "type": "address"},
+                    {"name": "amountIn", "type": "uint256"},
+                    {"name": "amountOutMinimum", "type": "uint256"},
+                    {"name": "sqrtPriceLimitX96", "type": "uint160"},
+                ],
+                "name": "params",
+                "type": "tuple",
+            }
+        ],
+        "name": "exactInputSingle",
+        "outputs": [{"name": "amountOut", "type": "uint256"}],
+        "stateMutability": "payable",
+        "type": "function",
+    },
+]
+
+# PancakeSwap V3 SwapRouter (a fork of the original Uniswap V3 SwapRouter) adds
+# a deadline right after the recipient, so the tuple has eight fields.
+# Selector: 0x414bf389.
+PANCAKESWAP_V3_SWAP_ROUTER_ABI = [
+    {
+        "inputs": [
+            {
+                "components": [
+                    {"name": "tokenIn", "type": "address"},
+                    {"name": "tokenOut", "type": "address"},
+                    {"name": "fee", "type": "uint24"},
+                    {"name": "recipient", "type": "address"},
+                    {"name": "deadline", "type": "uint256"},
+                    {"name": "amountIn", "type": "uint256"},
+                    {"name": "amountOutMinimum", "type": "uint256"},
+                    {"name": "sqrtPriceLimitX96", "type": "uint160"},
+                ],
+                "name": "params",
+                "type": "tuple",
+            }
         ],
         "name": "exactInputSingle",
         "outputs": [{"name": "amountOut", "type": "uint256"}],

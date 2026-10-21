@@ -45,6 +45,28 @@ def test_dex_name_is_case_insensitive(monkeypatch):
     assert pool is expected_pool
 
 
+def test_creates_uniswap_v3_adapter(monkeypatch):
+    expected_pool = MagicMock()
+    constructor = MagicMock(return_value=expected_pool)
+
+    monkeypatch.setattr(
+        "blockchain.dex_manager.PancakeV3Pool",
+        constructor,
+    )
+
+    w3 = MagicMock()
+    address = "0x0000000000000000000000000000000000000001"
+
+    pool = DEXManager.create_pool(
+        dex_name="uniswap_v3",
+        w3=w3,
+        pool_address=address,
+    )
+
+    assert pool is expected_pool
+    constructor.assert_called_once_with(w3=w3, address=address)
+
+
 def test_rejects_unsupported_dex():
     with pytest.raises(ValueError, match="Unsupported DEX"):
         DEXManager.create_pool(

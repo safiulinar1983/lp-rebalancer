@@ -635,7 +635,8 @@ class RebalanceCycle:
         spender: str,
         amount_raw: int,
     ) -> list[CycleStep]:
-        """Return the approve step needed before ``spender`` pulls tokens."""
+        """Return the unlimited approve step needed before ``spender`` pulls
+        tokens."""
         if amount_raw <= 0:
             return []
 
@@ -657,10 +658,10 @@ class RebalanceCycle:
         return [
             self._send_or_simulate(
                 "approve",
-                erc20.build_approve(spender, amount_raw),
+                erc20.build_max_approve(spender),
                 detail=(
-                    f"approve {amount_raw} raw units of {token} for the "
-                    f"{spender_label}"
+                    f"approve unlimited {token} for the {spender_label} "
+                    "(max allowance)"
                 ),
             )
         ]

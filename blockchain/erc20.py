@@ -11,6 +11,10 @@ from web3.contract.contract import ContractFunction
 from blockchain.abis import ERC20_ABI
 from blockchain.call_params import non_negative_amount, positive_amount
 
+# Unlimited allowance: grants the spender a one-time approval instead of an
+# exact amount that has to be renewed on every rebalance.
+MAX_UINT256 = 2**256 - 1
+
 
 class ERC20Token:
     """Read balances/allowances and prepare ``approve`` calls."""
@@ -68,3 +72,7 @@ class ERC20Token:
             self.w3.to_checksum_address(spender),
             positive_amount(amount, "amount"),
         )
+
+    def build_max_approve(self, spender: str) -> ContractFunction:
+        """Return an ``approve`` call granting an unlimited allowance."""
+        return self.build_approve(spender, MAX_UINT256)

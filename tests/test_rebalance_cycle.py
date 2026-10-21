@@ -14,6 +14,7 @@ import pytest
 from eth_abi import encode
 
 import rebalance_cycle
+from blockchain.erc20 import MAX_UINT256
 from blockchain.liquidity_math import Q96
 from blockchain.pancake_v3 import PoolState
 from blockchain.positions import Position
@@ -73,6 +74,14 @@ class FakeToken:
     def build_approve(self, spender, amount):
         self.approvals.append((spender, amount))
         return FakeFunctionCall("approve", spender=spender, amount=amount)
+
+    def build_max_approve(self, spender):
+        self.approvals.append((spender, MAX_UINT256))
+        return FakeFunctionCall(
+            "approve",
+            spender=spender,
+            amount=MAX_UINT256,
+        )
 
 
 def make_state(**overrides):
@@ -525,15 +534,9 @@ def test_rebalance_live_sends_every_step_in_order(monkeypatch):
         4_875_500_000,
     )
 
-    assert (SWAP_ROUTER, swap.amount_in_raw) in tokens[TOKEN0].approvals
-    assert (
-        POSITION_MANAGER,
-        result.plan.required_token0_raw,
-    ) in tokens[TOKEN0].approvals
-    assert (
-        POSITION_MANAGER,
-        result.plan.required_token1_raw,
-    ) in tokens[TOKEN1].approvals
+    assert (SWAP_ROUTER, MAX_UINT256) in tokens[TOKEN0].approvals
+    assert (POSITION_MANAGER, MAX_UINT256) in tokens[TOKEN0].approvals
+    assert (POSITION_MANAGER, MAX_UINT256) in tokens[TOKEN1].approvals
 
     # The new NFT is found by comparing the wallet positions before and after.
     assert position_manager.get_token_ids.call_count == 2
