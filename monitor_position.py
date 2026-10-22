@@ -15,10 +15,12 @@ from blockchain.position_manager import PositionManager
 from blockchain.fees import calculate_fees_value_usd
 from blockchain.oracle import get_token_price_usd
 from blockchain.rpc import connect
+from pool_guard import read_pool_state
 from strategy import Strategy
 from storage.sqlite_store import SQLiteStore
 
-# Pools whose quote token is a USD stablecoin are valued at exactly one dollar.
+# Tokens explicitly listed in ``oracle.stablecoins`` have no feed and are
+# valued at exactly one dollar. Every other token needs a Chainlink feed.
 STABLECOIN_PRICE_USD = Decimal("1")
 
 
@@ -32,40 +34,57 @@ def _oracle_price(w3: Web3, feed_address: str, max_age_seconds: int) -> Decimal:
         ) from exc
 
 
-def resolve_token_prices(w3: Web3, config: AppConfig) -> tuple[Decimal, Decimal]:
-    """Return ``(token0_usd, token1_usd)`` for the configured pool.
+def price_for_token(w3: Web3, config: AppConfig, token_address: str) -> Decimal:
+    """Return the USD price of one pool token.
 
-    An empty feed means that token is a USD stablecoin and is valued at $1.
-    Either side may be the stablecoin: on Base Sepolia USDC is token0, while on
-    Base mainnet WETH is token0 and USDC is token1. Both feeds being empty is an
-    error, and the pool spot price is never used as a substitute for a missing
-    feed.
+    Feeds are keyed by token address in ``oracle.feeds``, so the price does not
+    depend on whether the token is ``token0`` or ``token1``: switching the pool
+    does not require re-ordering the oracle settings. Tokens listed in
+    ``oracle.stablecoins`` are valued at ``$1``; the pool spot price is never
+    used as a substitute for a missing feed.
     """
-    if not config.token0_usd_feed and not config.token1_usd_feed:
-        raise RuntimeError(
-            "At least one oracle feed is required: "
-            "a pool spot price is not a USD price"
-        )
+    key = str(token_address).strip().lower()
+    feed = config.oracle_feeds.get(key)
 
-    if config.token0_usd_feed:
-        token0_price_usd = _oracle_price(
-            w3,
-            config.token0_usd_feed,
-            config.oracle_max_age_seconds,
-        )
-    else:
-        token0_price_usd = STABLECOIN_PRICE_USD
+    if feed is not None:
+        return _oracle_price(w3, feed.feed_address, feed.max_age_seconds)
 
-    if config.token1_usd_feed:
-        token1_price_usd = _oracle_price(
-            w3,
-            config.token1_usd_feed,
-            config.oracle_max_age_seconds,
-        )
-    else:
-        token1_price_usd = STABLECOIN_PRICE_USD
+    if key in config.oracle_stablecoins:
+        return STABLECOIN_PRICE_USD
 
-    return token0_price_usd, token1_price_usd
+    raise RuntimeError(
+        f"No oracle feed for token {token_address}: add it under "
+        "oracle.feeds in config.yaml, or list it under oracle.stablecoins "
+        "if it is a USD stablecoin"
+    )
+
+
+def resolve_token_prices(
+    w3: Web3,
+    config: AppConfig,
+    token0: str,
+    token1: str,
+) -> tuple[Decimal, Decimal]:
+    """Return ``(token0_usd, token1_usd)`` for the tokens of the pool."""
+    return (
+        price_for_token(w3, config, token0),
+        price_for_token(w3, config, token1),
+    )
+
+
+def resolve_native_price_usd(w3: Web3, config: AppConfig) -> Decimal | None:
+    """Return the native-token USD price used for gas, when it is configured.
+
+    Gas is paid in native ETH, so its price is read from the feed of
+    ``weth.address``. It does not depend on the pool containing WETH: a
+    BTC/USDC pool can still value gas in USD.
+    """
+    feed = config.oracle_feeds.get(config.weth_address.lower())
+
+    if feed is None:
+        return None
+
+    return _oracle_price(w3, feed.feed_address, feed.max_age_seconds)
 
 
 def main() -> None:
@@ -91,8 +110,13 @@ def main() -> None:
         fee_threshold_usd=config.fee_threshold_usd,
     )
 
-    pool_state = pool.read_state()
-    token0_price_usd, token1_price_usd = resolve_token_prices(w3, config)
+    pool_state = read_pool_state(pool, config)
+    token0_price_usd, token1_price_usd = resolve_token_prices(
+        w3,
+        config,
+        pool_state.token0,
+        pool_state.token1,
+    )
 
     position = position_manager.find_position(
         token0=pool_state.token0,

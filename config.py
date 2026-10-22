@@ -6,12 +6,14 @@ value ever reaches the price or balance math.
 Network profiles live under ``networks`` and are keyed by chain id; the
 top-level ``network`` value selects one of them and ``connect`` verifies the
 RPC chain id at runtime. Per-network settings include the RPC endpoint, WETH,
-oracle feeds and the ``dexes`` map. The ``dex`` key selects one DEX profile,
-which is resolved into the flat ``AppConfig`` fields used by the rest of the
-application.
+Chainlink feeds keyed by pool token address and the ``dexes`` map. The ``dex``
+key selects one DEX profile, which is resolved into the flat ``AppConfig``
+fields used by the rest of the application. Optional ``pool.expected_fee``,
+``pool.expected_token0`` and ``pool.expected_token1`` values guard a manual
+pool switch: ``pool_guard`` compares them with the state read from the chain.
 
 RPC URLs may reference environment variables, e.g.
-``${BASE_RPC_URL:-https://sepolia.base.org}``; ``.env`` next to the config
+``${BASE_RPC_URL:-https://mainnet.base.org}``; ``.env`` next to the config
 file is loaded before expansion.
 """
 
@@ -42,6 +44,10 @@ SUPPORTED_DEXES = ("uniswap_v3", "pancakeswap_v3")
 # Default slippage tolerance for swaps and liquidity limits: 0.5%.
 DEFAULT_SLIPPAGE_BPS = 50
 
+# Default maximum age of a Chainlink answer. Feeds with a slower heartbeat
+# override it per token, for example USDC/USD on Base updates every 24 hours.
+DEFAULT_ORACLE_MAX_AGE_SECONDS = 3600
+
 # Transaction safety defaults. The reserve is disabled when the config does not
 # set it; config.yaml enables a small explicit reserve for LIVE runs.
 DEFAULT_MIN_ETH_BALANCE = Decimal("0")
@@ -51,10 +57,31 @@ WEI_PER_ETH = Decimal(10**18)
 
 
 @dataclass(frozen=True)
+class OracleFeed:
+    """Chainlink USD feed bound to one pool token.
+
+    ``token_address`` is the token the price belongs to, so the feed does not
+    depend on the position of the token in a pool. ``max_age_seconds`` is the
+    staleness window of this feed: feeds with a slow heartbeat such as
+    USDC/USD need a wider window than ETH/USD.
+    """
+
+    token_address: str
+    feed_address: str
+    max_age_seconds: int
+
+
+@dataclass(frozen=True)
 class AppConfig:
     rpc_url: str
     pool_address: str
     range_half_width: Decimal
+    # Optional guards for a manual pool switch: the pool read from the chain
+    # must match them, otherwise ``pool_guard`` stops before anything is
+    # priced. An empty value is not checked.
+    pool_expected_fee: int | None
+    pool_expected_token0: str
+    pool_expected_token1: str
     fee_threshold_usd: Decimal
     check_interval: int
     mode: str
@@ -70,8 +97,8 @@ class AppConfig:
     weth_address: str
     swap_router_address: str
     quoter_address: str
-    token0_usd_feed: str
-    token1_usd_feed: str
+    oracle_feeds: dict[str, OracleFeed]
+    oracle_stablecoins: frozenset[str]
     oracle_max_age_seconds: int
     min_eth_balance_wei: int
     tx_confirmations: int
@@ -195,6 +222,76 @@ def _mapping(value: object, name: str) -> dict:
     return value
 
 
+def _parse_optional_fee(value: object, name: str) -> int | None:
+    """Parse an optional pool fee tier; an empty value disables the check."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+
+    return _to_positive_int(value, name)
+
+
+def _parse_oracle_feeds(
+    value: object,
+    name: str,
+    default_max_age_seconds: int,
+) -> dict[str, OracleFeed]:
+    """Parse ``oracle.feeds``: token address -> feed address or its settings.
+
+    The key is the pool token the price belongs to, so a feed keeps working when
+    the same token ends up as ``token0`` in one pool and ``token1`` in another.
+    A value may be a plain feed address or a mapping with ``address`` and an
+    optional ``max_age_seconds`` override.
+    """
+    feeds: dict[str, OracleFeed] = {}
+
+    for raw_token, raw_feed in _mapping(value, name).items():
+        token_address = _required_address(raw_token, f"{name} key")
+        feed_name = f"{name}.{token_address}"
+
+        if isinstance(raw_feed, dict):
+            feed_address = _required_address(
+                raw_feed.get("address", ""),
+                f"{feed_name}.address",
+            )
+            max_age_seconds = _to_positive_int(
+                raw_feed.get("max_age_seconds", default_max_age_seconds),
+                f"{feed_name}.max_age_seconds",
+            )
+        else:
+            feed_address = _required_address(raw_feed, feed_name)
+            max_age_seconds = default_max_age_seconds
+
+        key = token_address.lower()
+
+        if key in feeds:
+            raise ValueError(f"{name}: duplicate token address {token_address}")
+
+        feeds[key] = OracleFeed(
+            token_address=token_address,
+            feed_address=feed_address,
+            max_age_seconds=max_age_seconds,
+        )
+
+    return feeds
+
+
+def _parse_stablecoins(value: object, name: str) -> frozenset[str]:
+    """Parse ``oracle.stablecoins``: tokens valued at exactly one dollar.
+
+    This is an explicit opt-in for pools without a stablecoin feed. Mainnet
+    pools use real Chainlink feeds instead, including USDC/USD.
+    """
+    if value is None:
+        return frozenset()
+
+    if not isinstance(value, list):
+        raise ValueError(f"{name} must be a list of token addresses")
+
+    return frozenset(
+        _required_address(item, name).lower() for item in value
+    )
+
+
 _ENV_REFERENCE = re.compile(
     r"^\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}$"
 )
@@ -302,6 +399,29 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         pool_config.get("address", ""),
         f"dexes.{dex}.pool.address",
     )
+    pool_expected_fee = _parse_optional_fee(
+        pool_config.get("expected_fee"),
+        f"dexes.{dex}.pool.expected_fee",
+    )
+    pool_expected_token0 = _optional_address(
+        pool_config.get("expected_token0", ""),
+        f"dexes.{dex}.pool.expected_token0",
+    )
+    pool_expected_token1 = _optional_address(
+        pool_config.get("expected_token1", ""),
+        f"dexes.{dex}.pool.expected_token1",
+    )
+
+    if (
+        pool_expected_token0
+        and pool_expected_token1
+        and pool_expected_token0.lower() == pool_expected_token1.lower()
+    ):
+        raise ValueError(
+            f"dexes.{dex}.pool.expected_token0 and expected_token1 are the "
+            "same token: the guard could never pass"
+        )
+
     position_manager_address = _required_address(
         position_manager_config.get("address", ""),
         f"dexes.{dex}.position_manager.address",
@@ -414,6 +534,28 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         network_config.get("oracle"),
         f"chain_id {expected_chain_id}.oracle",
     )
+    oracle_max_age_seconds = _to_positive_int(
+        oracle_config.get("max_age_seconds", DEFAULT_ORACLE_MAX_AGE_SECONDS),
+        "oracle.max_age_seconds",
+    )
+    oracle_feeds = _parse_oracle_feeds(
+        oracle_config.get("feeds"),
+        "oracle.feeds",
+        oracle_max_age_seconds,
+    )
+    oracle_stablecoins = _parse_stablecoins(
+        oracle_config.get("stablecoins"),
+        "oracle.stablecoins",
+    )
+
+    conflicting_tokens = sorted(set(oracle_feeds) & oracle_stablecoins)
+
+    if conflicting_tokens:
+        raise ValueError(
+            "oracle.feeds and oracle.stablecoins both configure "
+            f"{', '.join(conflicting_tokens)}: keep only one of them"
+        )
+
     weth_config = _mapping(
         network_config.get("weth"),
         f"chain_id {expected_chain_id}.weth",
@@ -431,6 +573,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         rpc_url=rpc_url,
         pool_address=pool_address,
         range_half_width=range_half_width,
+        pool_expected_fee=pool_expected_fee,
+        pool_expected_token0=pool_expected_token0,
+        pool_expected_token1=pool_expected_token1,
         fee_threshold_usd=fee_threshold_usd,
         check_interval=check_interval,
         mode=mode,
@@ -446,12 +591,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         weth_address=weth_address,
         swap_router_address=swap_router_address,
         quoter_address=quoter_address,
-        token0_usd_feed=str(oracle_config.get("token0_usd_feed", "")).strip(),
-        token1_usd_feed=str(oracle_config.get("token1_usd_feed", "")).strip(),
-        oracle_max_age_seconds=_to_positive_int(
-            oracle_config.get("max_age_seconds", 3600),
-            "oracle.max_age_seconds",
-        ),
+        oracle_feeds=oracle_feeds,
+        oracle_stablecoins=oracle_stablecoins,
+        oracle_max_age_seconds=oracle_max_age_seconds,
         min_eth_balance_wei=min_eth_balance_wei,
         tx_confirmations=tx_confirmations,
         tx_timeout_seconds=tx_timeout_seconds,

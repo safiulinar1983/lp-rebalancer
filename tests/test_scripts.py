@@ -149,8 +149,6 @@ def test_open_position_dry_run_does_not_require_native_gas():
     cost, reason = _gas_preflight(
         w3,
         _gas_config(MODE_DRY_RUN),
-        SimpleNamespace(),
-        None,
         None,
         ["mint"],
     )
@@ -165,8 +163,6 @@ def test_open_position_live_blocks_without_native_gas():
     cost, reason = _gas_preflight(
         w3,
         _gas_config(MODE_LIVE),
-        SimpleNamespace(),
-        None,
         None,
         ["mint"],
     )

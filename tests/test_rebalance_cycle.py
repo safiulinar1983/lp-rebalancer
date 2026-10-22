@@ -151,6 +151,7 @@ def make_cycle(
     token_ids=(TOKEN_ID,),
     minted_token_id=None,
     prices=(Decimal("1"), Decimal("2500")),
+    native_price_usd=None,
     swap_router=None,
     account=None,
     store=None,
@@ -223,6 +224,7 @@ def make_cycle(
         strategy=strategy,
         token0_price_usd=prices[0],
         token1_price_usd=prices[1],
+        native_price_usd=native_price_usd,
         swap_router=swap_router,
         account=account,
         store=store,
@@ -715,7 +717,7 @@ def test_live_mode_requires_an_unlocked_account():
 
 
 def test_gas_budget_without_a_native_price_blocks_the_cycle():
-    # Neither pool token is the wrapped native token, so gas cannot be valued.
+    # No ETH/USD feed is configured, so gas cannot be valued in USD.
     config = replace(load_config(), max_gas_cost_usd=Decimal("1"))
     cycle, position_manager, _ = make_cycle(
         config=config,
@@ -742,6 +744,7 @@ def test_gas_budget_above_the_limit_blocks_the_cycle():
         proposed=(-100, 100),
         close_amounts=(5_000_000_000, 0),
         prices=(Decimal("2500"), Decimal("1")),
+        native_price_usd=Decimal("2500"),
     )
 
     result = cycle.run()
@@ -762,6 +765,7 @@ def test_gas_estimate_is_attached_to_the_plan():
         proposed=(-100, 100),
         close_amounts=(5_000_000_000, 0),
         prices=(Decimal("2500"), Decimal("1")),
+        native_price_usd=Decimal("2500"),
     )
 
     result = cycle.run()
@@ -771,6 +775,24 @@ def test_gas_estimate_is_attached_to_the_plan():
     assert result.plan.estimated_gas_cost_usd == pytest.approx(5.0)
     assert result.plan.max_gas_cost_usd == 10.0
     assert "Gas estimate:  $5.000000" in format_cycle_result(result)
+
+
+def test_gas_is_priced_for_a_pool_without_weth():
+    """A BTC/USDC pool holds no WETH; gas still comes from the ETH/USD feed."""
+    config = replace(load_config(), max_gas_cost_usd=Decimal("10"))
+    cycle, _, _ = make_cycle(
+        config=config,
+        action="REBALANCE",
+        proposed=(-100, 100),
+        close_amounts=(5_000_000_000, 0),
+        prices=(Decimal("1"), Decimal("80000")),
+        native_price_usd=Decimal("2500"),
+    )
+
+    result = cycle.run()
+
+    assert result.blocked is False
+    assert result.plan.estimated_gas_cost_usd == pytest.approx(5.0)
 
 
 def test_live_cycle_is_blocked_before_sending_when_native_balance_is_low(

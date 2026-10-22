@@ -43,7 +43,6 @@ from blockchain.fees import calculate_fees_value_usd
 from blockchain.gas import (
     check_gas_budget,
     gas_limit_for,
-    resolve_native_token_price_usd,
     wei_to_native,
 )
 from blockchain.interfaces import PoolAdapter
@@ -204,6 +203,7 @@ class RebalanceCycle:
         strategy: Strategy,
         token0_price_usd: Decimal,
         token1_price_usd: Decimal,
+        native_price_usd: Decimal | None = None,
         swap_router: SwapRouter | None = None,
         account: Any | None = None,
         store: Any | None = None,
@@ -222,6 +222,7 @@ class RebalanceCycle:
         self.strategy = strategy
         self.token0_price_usd = token0_price_usd
         self.token1_price_usd = token1_price_usd
+        self.native_price_usd = native_price_usd
         self.swap_router = swap_router
         self.account = account
         self.store = store
@@ -990,7 +991,7 @@ class RebalanceCycle:
             if plan.swap_required:
                 operations.append("approve")
 
-        cost_usd, gas_reason = self._gas_estimate(state, operations)
+        cost_usd, gas_reason = self._gas_estimate(operations)
 
         plan = replace(
             plan,
@@ -1003,27 +1004,21 @@ class RebalanceCycle:
 
     def _gas_estimate(
         self,
-        state: PoolState,
         operations: list[str],
     ) -> tuple[float | None, str | None]:
         """Return the total estimated gas cost in USD and a block reason.
 
-        The cost is priced with the oracle price of the wrapped native token
-        when the pool holds it, otherwise the price of the native side of the
-        pool is used. See ``blockchain.gas.resolve_native_token_price_usd``.
+        The native token (ETH) price comes from the oracle feed of
+        ``weth.address``, so it is available for any pool, not only for pools
+        that hold WETH. When the ceiling is configured but that feed is missing
+        the cycle is blocked instead of sending a transaction of unknown cost.
         """
         max_cost_usd = self.config.max_gas_cost_usd
 
         if max_cost_usd is None:
             return None, None
 
-        native_price_usd = resolve_native_token_price_usd(
-            state.token0,
-            state.token1,
-            self.config.weth_address,
-            self.token0_price_usd,
-            self.token1_price_usd,
-        )
+        native_price_usd = self.native_price_usd
 
         gas_price_wei = int(self.w3.eth.gas_price)
         total_cost_usd = Decimal(0)

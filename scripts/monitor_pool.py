@@ -20,6 +20,7 @@ from blockchain.dex_manager import DEXManager
 from blockchain.interfaces import PoolAdapter
 from blockchain.rpc import connect
 from config import AppConfig, load_config
+from pool_guard import read_pool_state
 from scripts._common import dex_title
 
 
@@ -30,7 +31,7 @@ def print_pool_info(
     chain_id: int,
 ) -> None:
     """Print a single pool snapshot."""
-    state = pool.read_state()
+    state = read_pool_state(pool, config)
 
     token0 = w3.eth.contract(address=state.token0, abi=ERC20_ABI)
     token1 = w3.eth.contract(address=state.token1, abi=ERC20_ABI)

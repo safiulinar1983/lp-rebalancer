@@ -1,9 +1,9 @@
-# LP rebalancer configuration (v0.4.0).
+# LP rebalancer configuration (v0.5.0).
 # Numbers under `strategy` are parsed as Decimal, never as binary floats.
 
 # Chain id of the network profile to use. `connect()` verifies that the RPC
 # endpoint really serves this chain before any transaction is prepared.
-network: 84532
+network: 8453
 
 # One DEX profile is selected by `dex`; the other profiles are ignored.
 dex: uniswap_v3
@@ -19,16 +19,27 @@ networks:
       address: "0x4200000000000000000000000000000000000006"
 
     oracle:
-      # May be left empty when token0 is a USD stablecoin: $1 is then assumed.
-      token0_usd_feed: ""
-      token1_usd_feed: "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1"
+      # Base Sepolia has no USDC/USD feed, so USDC is explicitly listed as a
+      # stablecoin and valued at $1. Every other token needs a feed.
       max_age_seconds: 3600
+      feeds:
+        "0x4200000000000000000000000000000000000006":
+          address: "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1"
+      stablecoins:
+        - "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 
     dexes:
       uniswap_v3:
         # Uniswap V3 USDC/WETH pool (fee tier 500) on Base Sepolia.
         pool:
           address: "0x94bfc0574FF48E92cE43d495376C477B1d0EEeC0"
+          # Optional guards for a manual pool switch (see pool_guard.py): a
+          # pool that does not match any set value stops the bot before it is
+          # priced. Tokens are listed in the order the pool itself returns
+          # them; `scripts/monitor_pool.py` prints that order.
+          expected_fee: 500
+          expected_token0: "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+          expected_token1: "0x4200000000000000000000000000000000000006"
         position_manager:
           address: "0x27F971cb582BF9E50F397e4d29a5C7A34f11faA2"
           # Optional: pin a specific NFT instead of searching the wallet.
@@ -45,6 +56,9 @@ networks:
         # until liquidity is seeded or the mainnet profile is filled in.
         pool:
           address: "0xf9c882e4EBd0886BcC87A30CE47222157Be12832"
+          expected_fee: 500
+          expected_token0: "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+          expected_token1: "0x4200000000000000000000000000000000000006"
         position_manager:
           address: "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364"
           # No NFT has been minted through this manager yet.
@@ -63,12 +77,25 @@ networks:
       address: "0x4200000000000000000000000000000000000006"
 
     oracle:
-      # WETH sorts before USDC on mainnet, so token0 is WETH and token1 is
-      # USDC. The ETH/USD feed values token0; the empty token1 feed marks USDC
-      # as a $1 stablecoin.
-      token0_usd_feed: "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70"
-      token1_usd_feed: ""
+      # Chainlink USD feeds keyed by pool token address: the token order inside
+      # a pool (and therefore a pool switch) never needs an oracle edit.
       max_age_seconds: 3600
+      feeds:
+        # WETH/USD: 0.15 % deviation, 20 min heartbeat.
+        "0x4200000000000000000000000000000000000006":
+          address: "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70"
+        # USDC/USD: 0.1 % deviation, but only a 24 h heartbeat, so the default
+        # 3600 s window would flag the feed as stale between updates.
+        "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913":
+          address: "0x7e860098F58bBFC8648a4311b374B1D669a2bc6B"
+          max_age_seconds: 172800
+        # Example for a pool switch (cbBTC/USDC): add one feed per pool token.
+        # Unused feeds cost nothing.
+        # "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf":
+        #   address: "0x07DA0E54543a844a80ABE69c8A12F22B3aA59f9D"
+      # Tokens valued at exactly $1 when they have no feed. Empty on mainnet:
+      # USDC is priced by its own Chainlink feed.
+      stablecoins: []
 
     # Verified Base mainnet deployments (Uniswap V3 docs and PancakeSwap V3
     # addresses). Pools are the USDC/WETH 0.05% (fee 500) pools returned by the
@@ -77,6 +104,14 @@ networks:
       uniswap_v3:
         pool:
           address: "0xd0b53D9277642d899DF5C87A3966A349A798F224"
+          # Optional guards for a manual pool switch (see pool_guard.py): the
+          # state read from the chain must match every set value, otherwise the
+          # bot stops before pricing anything. Set them whenever pool.address
+          # changes; clear the ones you do not want to check. Tokens follow the
+          # on-chain order printed by `scripts/monitor_pool.py`.
+          expected_fee: 500
+          expected_token0: "0x4200000000000000000000000000000000000006"
+          expected_token1: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
         position_manager:
           address: "0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1"
           token_id:
@@ -87,6 +122,9 @@ networks:
       pancakeswap_v3:
         pool:
           address: "0xB775272E537cc670C65DC852908aD47015244EaF"
+          expected_fee: 500
+          expected_token0: "0x4200000000000000000000000000000000000006"
+          expected_token1: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
         position_manager:
           address: "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364"
           token_id:

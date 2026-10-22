@@ -33,7 +33,6 @@ from blockchain.erc20 import ERC20Token
 from blockchain.gas import (
     check_gas_budget,
     gas_limit_for,
-    resolve_native_token_price_usd,
 )
 from blockchain.position_manager import PositionManager
 from blockchain.rpc import connect
@@ -41,7 +40,8 @@ from blockchain.swap_router import SwapRouter
 from blockchain.token_balances import TokenBalances
 from blockchain.tx import send_transaction
 from config import MODE_DRY_RUN, MODE_LIVE, AppConfig, load_config
-from monitor_position import resolve_token_prices
+from monitor_position import resolve_native_price_usd, resolve_token_prices
+from pool_guard import read_pool_state
 from position_opener import (
     OpenPositionPlan,
     cap_balances_to_usd,
@@ -117,9 +117,7 @@ def _validate_args(args: argparse.Namespace) -> None:
 def _gas_preflight(
     w3: Web3,
     config: AppConfig,
-    state,
-    token0_price_usd: Decimal | None,
-    token1_price_usd: Decimal | None,
+    native_price_usd: Decimal | None,
     operations: list[str],
 ) -> tuple[float | None, str | None]:
     """Check the optional USD gas ceiling and, in LIVE, the native balance.
@@ -145,22 +143,6 @@ def _gas_preflight(
 
     if max_cost_usd is None:
         return None, None
-
-    if token0_price_usd is None or token1_price_usd is None:
-        if live:
-            return None, (
-                "Gas budget is configured but token prices are unavailable"
-            )
-
-        return None, None
-
-    native_price_usd = resolve_native_token_price_usd(
-        state.token0,
-        state.token1,
-        config.weth_address,
-        token0_price_usd,
-        token1_price_usd,
-    )
 
     if native_price_usd is None:
         if live:
@@ -328,7 +310,7 @@ def open_position(config: AppConfig, args: argparse.Namespace) -> int:
         w3=w3,
         pool_address=config.pool_address,
     )
-    state = pool.read_state()
+    state = read_pool_state(pool, config)
 
     token0 = ERC20Token(w3, state.token0)
     token1 = ERC20Token(w3, state.token1)
@@ -338,15 +320,13 @@ def open_position(config: AppConfig, args: argparse.Namespace) -> int:
         token1_raw=token1.balance_of(config.wallet_address),
     )
 
-    token0_price_usd = None
-    token1_price_usd = None
-
-    if args.amount_usd is not None or config.max_gas_cost_usd is not None:
-        token0_price_usd, token1_price_usd = resolve_token_prices(w3, config)
-
     if args.amount_usd is not None:
-        if token0_price_usd is None or token1_price_usd is None:
-            raise RuntimeError("Token prices are required for --amount-usd")
+        token0_price_usd, token1_price_usd = resolve_token_prices(
+            w3,
+            config,
+            state.token0,
+            state.token1,
+        )
 
         balances = cap_balances_to_usd(
             balances,
@@ -429,12 +409,16 @@ def open_position(config: AppConfig, args: argparse.Namespace) -> int:
 
     operations.extend(("approve", "approve", "mint"))
 
+    native_price_usd = (
+        resolve_native_price_usd(w3, config)
+        if config.max_gas_cost_usd is not None
+        else None
+    )
+
     gas_cost_usd, gas_reason = _gas_preflight(
         w3,
         config,
-        state,
-        token0_price_usd,
-        token1_price_usd,
+        native_price_usd,
         operations,
     )
 

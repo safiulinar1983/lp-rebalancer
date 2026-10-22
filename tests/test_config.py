@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from config import DEFAULT_WETH_ADDRESS, load_config
+from config import DEFAULT_WETH_ADDRESS, OracleFeed, load_config
 
 PANCAKE_POOL = "0xf9c882e4EBd0886BcC87A30CE47222157Be12832"
 PANCAKE_POSITION_MANAGER = "0x46A15B0b27311cedF172AB29E4f4766fbE7F4364"
@@ -22,6 +22,18 @@ UNISWAP_POSITION_MANAGER = "0x27F971cb582BF9E50F397e4d29a5C7A34f11faA2"
 UNISWAP_ROUTER = "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4"
 UNISWAP_QUOTER = "0xC5290058841028F1614F3A6F0F5816cAd0df5E27"
 
+WETH = DEFAULT_WETH_ADDRESS
+USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+ETH_USD_FEED = "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1"
+
+ORACLE_BLOCK = f"""    oracle:
+      max_age_seconds: 3600
+      feeds:
+        "{WETH}": "{ETH_USD_FEED}"
+      stablecoins:
+        - "{USDC}"
+"""
+
 BASE_CONFIG = f"""
 network: 84532
 
@@ -31,13 +43,9 @@ networks:
     rpc_url: "${{BASE_RPC_URL:-https://sepolia.base.org}}"
 
     weth:
-      address: "0x4200000000000000000000000000000000000006"
+      address: "{WETH}"
 
-    oracle:
-      token0_usd_feed: ""
-      token1_usd_feed: "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1"
-      max_age_seconds: 3600
-
+{ORACLE_BLOCK}
     dexes:
       pancakeswap_v3:
         pool:
@@ -98,8 +106,9 @@ def test_default_config_is_found_from_any_directory(tmp_path, monkeypatch):
 
     config = load_config()
 
-    assert config.network == "base_sepolia"
-    assert config.expected_chain_id == 84532
+    # config.yaml at the repository root targets Base mainnet.
+    assert config.network == "base"
+    assert config.expected_chain_id == 8453
 
 
 def test_strategy_numbers_are_decimals(tmp_path):
@@ -540,3 +549,186 @@ dex: pancakeswap_v3""",
     config = load_config(write_config(tmp_path, content))
 
     assert config.expected_chain_id == 84532
+
+
+def test_oracle_feeds_are_keyed_by_token_address(tmp_path):
+    config = load_config(write_config(tmp_path))
+
+    assert config.oracle_feeds == {
+        WETH.lower(): OracleFeed(
+            token_address=WETH,
+            feed_address=ETH_USD_FEED,
+            max_age_seconds=3600,
+        )
+    }
+    assert config.oracle_stablecoins == frozenset({USDC.lower()})
+    assert config.oracle_max_age_seconds == 3600
+
+
+def test_oracle_feed_can_override_the_staleness_window(tmp_path):
+    block = f"""    oracle:
+      max_age_seconds: 3600
+      feeds:
+        "{WETH}":
+          address: "{ETH_USD_FEED}"
+          max_age_seconds: 172800
+"""
+    content = BASE_CONFIG.replace(ORACLE_BLOCK, block)
+
+    config = load_config(write_config(tmp_path, content))
+
+    assert config.oracle_feeds[WETH.lower()].max_age_seconds == 172800
+
+
+def test_oracle_feed_without_an_address_is_rejected(tmp_path):
+    block = f"""    oracle:
+      feeds:
+        "{WETH}":
+          max_age_seconds: 60
+"""
+    content = BASE_CONFIG.replace(ORACLE_BLOCK, block)
+
+    with pytest.raises(ValueError, match="address is empty"):
+        load_config(write_config(tmp_path, content))
+
+
+def test_oracle_feed_requires_a_valid_token_address(tmp_path):
+    block = f"""    oracle:
+      feeds:
+        weth: "{ETH_USD_FEED}"
+"""
+    content = BASE_CONFIG.replace(ORACLE_BLOCK, block)
+
+    with pytest.raises(ValueError, match="oracle.feeds key"):
+        load_config(write_config(tmp_path, content))
+
+
+def test_oracle_feeds_must_be_a_mapping(tmp_path):
+    block = f"""    oracle:
+      feeds:
+        - "{WETH}"
+"""
+    content = BASE_CONFIG.replace(ORACLE_BLOCK, block)
+
+    with pytest.raises(ValueError, match="oracle.feeds must be a mapping"):
+        load_config(write_config(tmp_path, content))
+
+
+def test_oracle_stablecoins_must_be_a_list(tmp_path):
+    block = f"""    oracle:
+      stablecoins: "{USDC}"
+"""
+    content = BASE_CONFIG.replace(ORACLE_BLOCK, block)
+
+    with pytest.raises(
+        ValueError,
+        match="oracle.stablecoins must be a list",
+    ):
+        load_config(write_config(tmp_path, content))
+
+
+def test_token_cannot_be_both_a_feed_and_a_stablecoin(tmp_path):
+    block = f"""    oracle:
+      feeds:
+        "{USDC}": "{ETH_USD_FEED}"
+      stablecoins:
+        - "{USDC}"
+"""
+    content = BASE_CONFIG.replace(ORACLE_BLOCK, block)
+
+    with pytest.raises(ValueError, match="both configure"):
+        load_config(write_config(tmp_path, content))
+
+
+def test_oracle_section_may_be_empty(tmp_path):
+    content = BASE_CONFIG.replace(ORACLE_BLOCK, "    oracle: {}\n")
+
+    config = load_config(write_config(tmp_path, content))
+
+    assert config.oracle_feeds == {}
+    assert config.oracle_stablecoins == frozenset()
+
+
+
+def pool_guard_block(*lines: str) -> str:
+    """Return a ``pool:`` section with the given extra guard lines."""
+    body = "".join(f"          {line}\n" for line in lines)
+    return (
+        "        pool:\n"
+        f'          address: "{PANCAKE_POOL}"\n'
+        f"{body}"
+    )
+
+
+def config_with_pool_guards(tmp_path: Path, *lines: str) -> Path:
+    """Write the base config with optional ``pool.expected_*`` values set."""
+    content = BASE_CONFIG.replace(
+        f'        pool:\n          address: "{PANCAKE_POOL}"\n',
+        pool_guard_block(*lines),
+    )
+    return write_config(tmp_path, content)
+
+
+def test_pool_guards_are_parsed(tmp_path):
+    path = config_with_pool_guards(
+        tmp_path,
+        "expected_fee: 500",
+        f'expected_token0: "{USDC}"',
+        f'expected_token1: "{WETH}"',
+    )
+
+    config = load_config(path)
+
+    assert config.pool_expected_fee == 500
+    assert config.pool_expected_token0 == USDC
+    assert config.pool_expected_token1 == WETH
+
+
+def test_pool_guards_default_to_unset(tmp_path):
+    config = load_config(write_config(tmp_path))
+
+    assert config.pool_expected_fee is None
+    assert config.pool_expected_token0 == ""
+    assert config.pool_expected_token1 == ""
+
+
+@pytest.mark.parametrize("value", ["0", "-500", "abc"])
+def test_pool_expected_fee_must_be_a_positive_integer(tmp_path, value):
+    path = config_with_pool_guards(tmp_path, f"expected_fee: {value}")
+
+    with pytest.raises(
+        ValueError,
+        match=r"pool\.expected_fee must be a positive integer",
+    ):
+        load_config(path)
+
+
+def test_pool_expected_token_must_be_an_address(tmp_path):
+    path = config_with_pool_guards(tmp_path, 'expected_token0: "WETH"')
+
+    with pytest.raises(ValueError, match=r"pool\.expected_token0"):
+        load_config(path)
+
+
+def test_pool_guards_reject_the_same_token_twice(tmp_path):
+    path = config_with_pool_guards(
+        tmp_path,
+        f'expected_token0: "{WETH}"',
+        f'expected_token1: "{WETH}"',
+    )
+
+    with pytest.raises(ValueError, match="same token"):
+        load_config(path)
+
+
+def test_default_config_guards_the_active_mainnet_pool():
+    config = load_config()
+
+    assert config.network == "base"
+    assert config.pool_address == "0xd0b53D9277642d899DF5C87A3966A349A798F224"
+    assert config.pool_expected_fee == 500
+    assert config.pool_expected_token0 == DEFAULT_WETH_ADDRESS
+    assert (
+        config.pool_expected_token1
+        == "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    )

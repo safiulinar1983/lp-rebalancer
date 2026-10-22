@@ -25,6 +25,7 @@ from blockchain.gas import gas_limit_for
 from blockchain.rpc import connect
 from blockchain.tx import send_transaction
 from config import AppConfig, load_config
+from pool_guard import read_pool_state
 from scripts._common import check_wallet, private_key
 
 DEADLINE_SECONDS = 600
@@ -82,7 +83,7 @@ def mint_position(
         w3=w3,
         pool_address=config.pool_address,
     )
-    state = pool.read_state()
+    state = read_pool_state(pool, config)
 
     if tick_lower % state.tick_spacing or tick_upper % state.tick_spacing:
         raise ValueError(

@@ -129,29 +129,3 @@ def check_gas_budget(
         cost_usd=cost_usd,
         max_cost_usd=max_gas_cost_usd,
     )
-
-
-def resolve_native_token_price_usd(
-    token0: str,
-    token1: str,
-    weth_address: str,
-    token0_price_usd: Decimal,
-    token1_price_usd: Decimal,
-) -> Decimal | None:
-    """Return the USD price of the chain's native token, if it can be known.
-
-    Gas is paid in the chain's native token, while the oracle only prices the
-    pool tokens. A pool that holds the wrapped native token is the only case
-    where an existing feed can value gas, assuming a 1:1 peg of the wrapper.
-    """
-    for token, price in (
-        (token0, token0_price_usd),
-        (token1, token1_price_usd),
-    ):
-        if not token or not weth_address:
-            continue
-
-        if token.lower() == weth_address.lower():
-            return price
-
-    return None

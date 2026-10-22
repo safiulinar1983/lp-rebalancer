@@ -28,7 +28,8 @@ from blockchain.position_manager import PositionManager
 from blockchain.rpc import connect
 from blockchain.swap_router import SwapRouter
 from config import MODE_LIVE, AppConfig, load_config
-from monitor_position import resolve_token_prices
+from monitor_position import resolve_native_price_usd, resolve_token_prices
+from pool_guard import read_pool_state
 from rebalance_cycle import CycleResult, RebalanceCycle, format_cycle_result
 from scripts._common import check_wallet, private_key
 from storage.sqlite_store import SQLiteStore
@@ -81,7 +82,17 @@ def build_cycle(
         fee_threshold_usd=config.fee_threshold_usd,
     )
 
-    token0_price_usd, token1_price_usd = resolve_token_prices(w3, config)
+    # Token addresses come from the pool itself, so the oracle lookup follows
+    # whatever pair the configured pool holds. The read also verifies the
+    # optional pool.expected_* guards before any price is resolved.
+    state = read_pool_state(pool, config)
+    token0_price_usd, token1_price_usd = resolve_token_prices(
+        w3,
+        config,
+        state.token0,
+        state.token1,
+    )
+    native_price_usd = resolve_native_price_usd(w3, config)
 
     return RebalanceCycle(
         w3=w3,
@@ -91,6 +102,7 @@ def build_cycle(
         strategy=strategy,
         token0_price_usd=token0_price_usd,
         token1_price_usd=token1_price_usd,
+        native_price_usd=native_price_usd,
         swap_router=build_swap_router(w3, config),
         account=account,
         store=store,
